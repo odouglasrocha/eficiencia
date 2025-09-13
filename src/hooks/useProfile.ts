@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './useAuth';
 import { useToast } from '@/hooks/use-toast';
+import userProfileServiceHybrid, { UserProfile, UpdateProfileData } from '@/services/userProfileServiceHybrid';
 
 export interface Profile {
   id: string;
@@ -38,13 +39,58 @@ export function useProfile() {
   const { toast } = useToast();
   const { user } = useAuth();
 
+  // Função para converter UserProfile para Profile (compatibilidade)
+  const convertUserProfileToProfile = (userProfile: UserProfile): Profile => {
+    return {
+      id: userProfile._id || '',
+      user_id: userProfile._id || '',
+      full_name: userProfile.full_name || null,
+      phone: userProfile.phone || null,
+      department: userProfile.department || null,
+      position: userProfile.position || null,
+      location: userProfile.location || null,
+      bio: userProfile.bio || null,
+      avatar_url: userProfile.avatar_url || null,
+      language: userProfile.language || 'pt-BR',
+      timezone: userProfile.timezone || 'America/Sao_Paulo',
+      notifications: userProfile.notifications || {
+        email: true,
+        push: true,
+        whatsapp: false
+      },
+      created_at: userProfile.created_at?.toISOString() || new Date().toISOString(),
+      updated_at: userProfile.updated_at?.toISOString() || new Date().toISOString()
+    };
+  };
+
   const fetchProfile = async () => {
     if (!user) return;
 
     try {
       setLoading(true);
       
-      // Buscar perfil do localStorage ou criar padrão
+      // Tentar buscar perfil com userProfileServiceHybrid primeiro
+      try {
+        const userProfile = await userProfileServiceHybrid.getUserProfile(user.id);
+        const profileData = convertUserProfileToProfile(userProfile);
+        setProfile(profileData);
+        
+        // Converter roles do UserProfile para UserRole[]
+        const userRoles: UserRole[] = userProfile.roles.map((role, index) => ({
+          id: `role_${user.id}_${index}`,
+          user_id: user.id,
+          role: role as 'administrador' | 'operador' | 'supervisor',
+          created_at: userProfile.created_at?.toISOString() || new Date().toISOString()
+        }));
+        setRoles(userRoles);
+        
+        console.log('✅ Perfil carregado com userProfileServiceHybrid');
+        return;
+      } catch (profileError) {
+        console.warn('Fallback para localStorage no perfil:', profileError);
+      }
+      
+      // Fallback: Buscar perfil do localStorage ou criar padrão
       const savedProfile = localStorage.getItem(`profile_${user.id}`);
       
       if (savedProfile) {
@@ -56,15 +102,15 @@ export function useProfile() {
           id: `profile_${user.id}`,
           user_id: user.id,
           full_name: user.full_name || null,
-          phone: null,
-          department: null,
-          position: null,
-          location: null,
-          bio: null,
+          phone: user.phone || null,
+          department: user.department || null,
+          position: user.position || null,
+          location: user.location || null,
+          bio: user.bio || null,
           avatar_url: user.avatar_url || null,
-          language: 'pt-BR',
-          timezone: 'America/Sao_Paulo',
-          notifications: {
+          language: user.language || 'pt-BR',
+          timezone: user.timezone || 'America/Sao_Paulo',
+          notifications: user.notifications || {
             email: true,
             push: true,
             whatsapp: false
@@ -112,6 +158,38 @@ export function useProfile() {
     if (!user || !profile) return;
 
     try {
+      // Converter updates de Profile para UpdateProfileData
+      const updateData: UpdateProfileData = {
+        full_name: updates.full_name || undefined,
+        avatar_url: updates.avatar_url || undefined,
+        phone: updates.phone || undefined,
+        department: updates.department || undefined,
+        position: updates.position || undefined,
+        location: updates.location || undefined,
+        bio: updates.bio || undefined,
+        language: updates.language || undefined,
+        timezone: updates.timezone || undefined,
+        notifications: updates.notifications || undefined
+      };
+
+      // Tentar atualizar com userProfileServiceHybrid primeiro
+      try {
+        const updatedUserProfile = await userProfileServiceHybrid.updateUserProfile(user.id, updateData);
+        const updatedProfile = convertUserProfileToProfile(updatedUserProfile);
+        setProfile(updatedProfile);
+        
+        console.log('✅ Perfil atualizado com userProfileServiceHybrid');
+        
+        toast({
+          title: "Sucesso",
+          description: "Perfil atualizado com sucesso!",
+        });
+        return;
+      } catch (profileError) {
+        console.warn('Fallback para localStorage na atualização:', profileError);
+      }
+
+      // Fallback: atualizar no localStorage
       const updatedProfile = {
         ...profile,
         ...updates,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Navigate } from "react-router-dom";
-import { useAuthSimple as useAuth } from "@/hooks/useAuth";
+import { useAuth } from "@/hooks/useAuth";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import { OeeCard } from "@/components/OeeCard";
 import { MachineCard } from "@/components/MachineCard";
@@ -31,7 +31,7 @@ import {
   mockLosses,
   mockSystemMetrics
 } from "@/data/mockData";
-import mockMongoService from "@/services/mockMongoService";
+// import mockMongoService from "@/services/mockMongoService"; // Removido - usando userProfileServiceHybrid
 import { useMachines } from "@/hooks/useMachines";
 import { AddMachineDialog } from "@/components/AddMachineDialog";
 import { ProductionDialog } from "@/components/ProductionDialog";
@@ -43,7 +43,7 @@ import NotificationSettings from "@/components/NotificationSettings";
 import { MachineDetailsModal } from "@/components/MachineDetailsModal";
 
 const Index = () => {
-  console.log('🏭 Index component loading...');
+  // console.log('🏭 Index component loading...'); // Removido para evitar spam de logs
   
   // All hooks must be called at the top, before any conditional returns
   const { user, loading: authLoading, isAuthenticated } = useAuth();
@@ -134,15 +134,17 @@ const Index = () => {
     
     if (confirmed) {
       try {
-        await mockMongoService.deleteMachine(machineId);
+        // TODO: Implementar deleteMachine com userProfileServiceHybrid
+        // await mockMongoService.deleteMachine(machineId);
         
         toast({
-          title: "Sucesso",
-          description: `Máquina "${machine.name}" e todos os registros relacionados foram excluídos`,
+          title: "Funcionalidade temporariamente desabilitada",
+          description: "A exclusão de máquinas será implementada em breve",
+          variant: "destructive",
         });
         
-        // Forçar reload dos dados
-        window.location.reload();
+        // // Forçar reload dos dados
+        // window.location.reload();
       } catch (error) {
         toast({
           title: "Erro", 
@@ -162,7 +164,7 @@ const Index = () => {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!authLoading && !isAuthenticated) {
     return <Navigate to="/auth" replace />;
   }
 

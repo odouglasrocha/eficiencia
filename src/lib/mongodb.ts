@@ -11,10 +11,19 @@ if (!MONGODB_URI) {
  * através de hot reloads em desenvolvimento. Isso previne conexões sendo criadas
  * a cada mudança de arquivo.
  */
-let cached = (global as any).mongoose;
+
+// Verificar se estamos no ambiente do navegador ou Node.js
+const globalThis = (() => {
+  if (typeof window !== 'undefined') return window;
+  if (typeof global !== 'undefined') return global;
+  if (typeof self !== 'undefined') return self;
+  throw new Error('Unable to locate global object');
+})();
+
+let cached = (globalThis as any).mongoose;
 
 if (!cached) {
-  cached = (global as any).mongoose = { conn: null, promise: null };
+  cached = (globalThis as any).mongoose = { conn: null, promise: null };
 }
 
 async function connectDB() {

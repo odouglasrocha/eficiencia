@@ -13,6 +13,7 @@ export interface OeeMetrics {
 }
 
 export interface ProductionRecordData {
+  recordId?: string; // Para operações de update
   machineId: string;
   startTime: string;
   endTime: string;
@@ -22,6 +23,15 @@ export interface ProductionRecordData {
   plannedTime: number;
   downtimeMinutes: number;
   downtimeReason?: string;
+  materialCode?: string; // Código do material produzido
+  shift?: string; // Turno de produção
+  operatorId?: string; // ID do operador responsável
+  notes?: string; // Observações adicionais
+  batchNumber?: string; // Número do lote
+  qualityCheck?: boolean; // Se passou na verificação de qualidade
+  temperature?: number; // Temperatura durante produção
+  pressure?: number; // Pressão durante produção
+  speed?: number; // Velocidade da máquina
 }
 
 // Simulação de dados em localStorage
@@ -118,15 +128,14 @@ class MockMongoService {
     };
   }
 
-  // ===== FUNÇÕES DE REGISTROS DE PRODUÇÃO =====
-  async upsertProductionRecord(data: ProductionRecordData) {
+  // ===== FUNÇÕES DE REGISTROS DE PRODUÇÃO - SISTEMA COMPLETO =====
+  
+  // Criar novo registro de produção
+  async createProductionRecord(data: ProductionRecordData) {
     const records = JSON.parse(localStorage.getItem('productionRecords') || '[]');
     
-    // Buscar registro existente
-    const existingIndex = records.findIndex((r: any) => r.machine_id === data.machineId);
-    
     const record = {
-      _id: existingIndex >= 0 ? records[existingIndex]._id : uuidv4(),
+      _id: uuidv4(),
       machine_id: data.machineId,
       start_time: data.startTime,
       end_time: data.endTime,
@@ -136,42 +145,227 @@ class MockMongoService {
       planned_time: data.plannedTime,
       downtime_minutes: data.downtimeMinutes,
       downtime_reason: data.downtimeReason,
-      created_at: new Date().toISOString()
+      material_code: data.materialCode || null,
+      shift: data.shift || null,
+      operator_id: data.operatorId || null,
+      notes: data.notes || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
-    if (existingIndex >= 0) {
-      records[existingIndex] = record;
-    } else {
-      records.push(record);
-    }
-    
+    records.push(record);
     localStorage.setItem('productionRecords', JSON.stringify(records));
     
-    // Atualizar máquina com métricas OEE
-    const machine = await this.getMachineById(data.machineId);
-    if (machine) {
-      const oeeMetrics = this.calculateOeeMetrics(
-        data.goodProduction,
-        data.plannedTime,
-        data.downtimeMinutes,
-        machine.target_production || 1
-      );
-      
-      await this.updateMachine(data.machineId, {
-        ...oeeMetrics,
-        current_production: data.goodProduction
-      });
-    }
-
+    // Atualizar métricas da máquina
+    await this.updateMachineMetrics(data.machineId);
+    
     return record;
   }
 
-  async getProductionRecords(machineId?: string) {
+  // Atualizar registro de produção existente
+  async updateProductionRecord(recordId: string, updates: Partial<ProductionRecordData>) {
     const records = JSON.parse(localStorage.getItem('productionRecords') || '[]');
-    if (machineId) {
-      return records.filter((r: any) => r.machine_id === machineId);
+    const index = records.findIndex((r: any) => r._id === recordId);
+    
+    if (index === -1) {
+      throw new Error('Registro de produção não encontrado');
     }
+    
+    const updatedRecord = {
+      ...records[index],
+      ...updates,
+      updated_at: new Date().toISOString()
+    };
+    
+    records[index] = updatedRecord;
+    localStorage.setItem('productionRecords', JSON.stringify(records));
+    
+    // Atualizar métricas da máquina
+    await this.updateMachineMetrics(updatedRecord.machine_id);
+    
+    return updatedRecord;
+  }
+
+  // Buscar registros de produção com filtros avançados
+  async getProductionRecords(filters?: {
+    machineId?: string;
+    startDate?: string;
+    endDate?: string;
+    shift?: string;
+    operatorId?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    let records = JSON.parse(localStorage.getItem('productionRecords') || '[]');
+    
+    // Aplicar filtros
+    if (filters) {
+      if (filters.machineId) {
+        records = records.filter((r: any) => r.machine_id === filters.machineId);
+      }
+      
+      if (filters.startDate) {
+        records = records.filter((r: any) => 
+          new Date(r.start_time) >= new Date(filters.startDate!)
+        );
+      }
+      
+      if (filters.endDate) {
+        records = records.filter((r: any) => 
+          new Date(r.start_time) <= new Date(filters.endDate!)
+        );
+      }
+      
+      if (filters.shift) {
+        records = records.filter((r: any) => r.shift === filters.shift);
+      }
+      
+      if (filters.operatorId) {
+        records = records.filter((r: any) => r.operator_id === filters.operatorId);
+      }
+    }
+    
+    // Ordenar por data de criação (mais recente primeiro)
+    records.sort((a: any, b: any) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+    
+    // Aplicar paginação
+    if (filters?.limit || filters?.offset) {
+      const offset = filters.offset || 0;
+      const limit = filters.limit || 50;
+      records = records.slice(offset, offset + limit);
+    }
+    
     return records;
+  }
+
+  // Buscar registro específico por ID
+  async getProductionRecordById(recordId: string) {
+    const records = JSON.parse(localStorage.getItem('productionRecords') || '[]');
+    return records.find((r: any) => r._id === recordId);
+  }
+
+  // Excluir registro de produção
+  async deleteProductionRecord(recordId: string) {
+    const records = JSON.parse(localStorage.getItem('productionRecords') || '[]');
+    const record = records.find((r: any) => r._id === recordId);
+    
+    if (!record) {
+      throw new Error('Registro de produção não encontrado');
+    }
+    
+    const filteredRecords = records.filter((r: any) => r._id !== recordId);
+    localStorage.setItem('productionRecords', JSON.stringify(filteredRecords));
+    
+    // Atualizar métricas da máquina
+    await this.updateMachineMetrics(record.machine_id);
+    
+    return true;
+  }
+
+  // Função para manter compatibilidade (upsert)
+  async upsertProductionRecord(data: ProductionRecordData) {
+    // Se tem ID, atualiza; senão, cria novo
+    if (data.recordId) {
+      return await this.updateProductionRecord(data.recordId, data);
+    } else {
+      return await this.createProductionRecord(data);
+    }
+  }
+
+  // Atualizar métricas da máquina baseado nos registros de produção
+  private async updateMachineMetrics(machineId: string) {
+    const machine = await this.getMachineById(machineId);
+    if (!machine) return;
+    
+    // Buscar registros recentes da máquina (últimas 24h)
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const recentRecords = await this.getProductionRecords({
+      machineId,
+      startDate: yesterday.toISOString()
+    });
+    
+    if (recentRecords.length === 0) return;
+    
+    // Calcular métricas agregadas
+    const totalGoodProduction = recentRecords.reduce((sum: number, r: any) => sum + r.good_production, 0);
+    const totalPlannedTime = recentRecords.reduce((sum: number, r: any) => sum + r.planned_time, 0);
+    const totalDowntime = recentRecords.reduce((sum: number, r: any) => sum + r.downtime_minutes, 0);
+    
+    const oeeMetrics = this.calculateOeeMetrics(
+      totalGoodProduction,
+      totalPlannedTime,
+      totalDowntime,
+      machine.target_production || 1
+    );
+    
+    await this.updateMachine(machineId, {
+      ...oeeMetrics,
+      current_production: totalGoodProduction,
+      last_production_update: new Date().toISOString()
+    });
+  }
+
+  // Buscar estatísticas de produção
+  async getProductionStatistics(filters?: {
+    machineId?: string;
+    startDate?: string;
+    endDate?: string;
+  }) {
+    const records = await this.getProductionRecords(filters);
+    
+    if (records.length === 0) {
+      return {
+        totalRecords: 0,
+        totalProduction: 0,
+        totalWaste: 0,
+        totalDowntime: 0,
+        averageOEE: 0,
+        averageAvailability: 0,
+        averagePerformance: 0,
+        averageQuality: 0
+      };
+    }
+    
+    const totalProduction = records.reduce((sum: number, r: any) => sum + r.good_production, 0);
+    const totalFilmWaste = records.reduce((sum: number, r: any) => sum + r.film_waste, 0);
+    const totalOrganicWaste = records.reduce((sum: number, r: any) => sum + r.organic_waste, 0);
+    const totalDowntime = records.reduce((sum: number, r: any) => sum + r.downtime_minutes, 0);
+    const totalPlannedTime = records.reduce((sum: number, r: any) => sum + r.planned_time, 0);
+    
+    // Calcular métricas médias
+    const metrics = records.map((r: any) => {
+      const machine = JSON.parse(localStorage.getItem('machines') || '[]')
+        .find((m: any) => m._id === r.machine_id);
+      const targetProduction = machine?.target_production || 1;
+      
+      return this.calculateOeeMetrics(
+        r.good_production,
+        r.planned_time,
+        r.downtime_minutes,
+        targetProduction
+      );
+    });
+    
+    const averageOEE = metrics.reduce((sum, m) => sum + m.oee, 0) / metrics.length;
+    const averageAvailability = metrics.reduce((sum, m) => sum + m.availability, 0) / metrics.length;
+    const averagePerformance = metrics.reduce((sum, m) => sum + m.performance, 0) / metrics.length;
+    const averageQuality = metrics.reduce((sum, m) => sum + m.quality, 0) / metrics.length;
+    
+    return {
+      totalRecords: records.length,
+      totalProduction,
+      totalWaste: totalFilmWaste + totalOrganicWaste,
+      totalDowntime,
+      totalPlannedTime,
+      averageOEE: Math.round(averageOEE * 100) / 100,
+      averageAvailability: Math.round(averageAvailability * 100) / 100,
+      averagePerformance: Math.round(averagePerformance * 100) / 100,
+      averageQuality: Math.round(averageQuality * 100) / 100
+    };
   }
 
   // ===== FUNÇÕES DE HISTÓRICO OEE =====

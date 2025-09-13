@@ -42,7 +42,21 @@ export interface IProductionRecord {
   planned_time: number;
   downtime_minutes: number;
   downtime_reason?: string;
+  material_code?: string; // Código do material produzido
+  shift?: string; // Turno de produção (A, B, C)
+  operator_id?: string; // ID do operador responsável
+  notes?: string; // Observações adicionais
+  batch_number?: string; // Número do lote
+  quality_check?: boolean; // Se passou na verificação de qualidade
+  temperature?: number; // Temperatura durante produção
+  pressure?: number; // Pressão durante produção
+  speed?: number; // Velocidade da máquina
+  oee_calculated?: number; // OEE calculado para este registro
+  availability_calculated?: number; // Disponibilidade calculada
+  performance_calculated?: number; // Performance calculada
+  quality_calculated?: number; // Qualidade calculada
   created_at: string;
+  updated_at: string;
 }
 
 export interface IUser {

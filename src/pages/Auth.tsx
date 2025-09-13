@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
-import mockMongoService from "@/services/mockMongoService";
+import userProfileServiceHybrid from "@/services/userProfileServiceHybrid";
 import { Eye, EyeOff, Factory, LogIn, UserPlus } from "lucide-react";
 
 const Auth = () => {
@@ -21,21 +21,22 @@ const Auth = () => {
   const navigate = useNavigate();
 
   // Verificar se já está logado
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const token = localStorage.getItem('auth_token');
-         if (token) {
-           await mockMongoService.verifyToken(token);
-           navigate("/");
-         }
-      } catch (error) {
-        // Token inválido, remover do localStorage
-        localStorage.removeItem('auth_token');
-      }
-    };
-    checkAuth();
-  }, [navigate]);
+  // Remover verificação automática para evitar conflito com useAuth
+  // useEffect(() => {
+  //   const checkAuth = async () => {
+  //     try {
+  //       const token = localStorage.getItem('auth_token');
+  //        if (token) {
+  //          await userProfileServiceHybrid.verifyToken(token);
+  //          navigate("/");
+  //        }
+  //     } catch (error) {
+  //       // Token inválido, remover do localStorage
+  //       localStorage.removeItem('auth_token');
+  //     }
+  //   };
+  //   checkAuth();
+  // }, [navigate]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({
@@ -49,17 +50,30 @@ const Auth = () => {
     setIsLoading(true);
 
     try {
-      const result = await mockMongoService.authenticateUser(formData.email, formData.password);
+      const result = await userProfileServiceHybrid.authenticateUser(formData.email, formData.password);
       
       // Salvar token no localStorage
       localStorage.setItem('auth_token', result.token);
+      
+      // Salvar dados do usuário também para garantir
+      localStorage.setItem('user_data', JSON.stringify(result.user));
       
       toast({
         title: "Login realizado com sucesso!",
         description: "Bem-vindo ao Sistema OEE",
       });
       
-      navigate("/");
+      // Redirecionamento imediato e forçado
+      console.log('🚀 Auth: Redirecionando para dashboard...');
+      navigate("/", { replace: true });
+      
+      // Forçar reload da página se necessário
+      setTimeout(() => {
+        if (window.location.pathname === '/auth') {
+          console.log('⚠️ Auth: Redirecionamento falhou, forçando reload');
+          window.location.href = '/';
+        }
+      }, 1000);
     } catch (error) {
       toast({
         title: "Erro no login",
@@ -96,10 +110,14 @@ const Auth = () => {
     }
 
     try {
-      const result = await mockMongoService.createUser(formData.email, formData.password, formData.email);
+      const result = await userProfileServiceHybrid.createUser({
+        email: formData.email,
+        password: formData.password,
+        full_name: formData.email
+      });
       
       // Fazer login automaticamente após criar a conta
-      const authResult = await mockMongoService.authenticateUser(formData.email, formData.password);
+      const authResult = await userProfileServiceHybrid.authenticateUser(formData.email, formData.password);
       localStorage.setItem('auth_token', authResult.token);
       
       toast({
@@ -107,7 +125,10 @@ const Auth = () => {
         description: "Bem-vindo ao Sistema OEE",
       });
       
-      navigate("/");
+      // Aguardar um pouco antes de navegar para evitar loops
+      setTimeout(() => {
+        navigate("/", { replace: true });
+      }, 1000);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Erro desconhecido";
       
