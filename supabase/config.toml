@@ -1,0 +1,54 @@
+project_id = "huxyvrnwefkedmdxjkep"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://huxyvrnwefkedmdxjkep.supabase.co"]
+jwt_expiry = 3600
+refresh_token_rotation_enabled = true
+security_update_password_require_reauthentication = true
+enable_signup = true
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[functions.whatsapp-connect]
+verify_jwt = false
+
+[functions.whatsapp-send]
+verify_jwt = false
+
+[functions.whatsapp-test]
+verify_jwt = false
+
+[functions.whatsapp-send-test]
+verify_jwt = false
+
+[functions.whatsapp-status]
+verify_jwt = false
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[realtime]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
