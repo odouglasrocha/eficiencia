@@ -80,64 +80,102 @@ export function useMachines() {
               };
             }
             
-            // Buscar o último registro de produção da máquina
+            // Buscar dados de produção da máquina
             const machineIdString = typeof machineId === 'string' ? machineId : machineId.toString();
-            const productionRecords = await mockMongoService.getProductionRecords(machineIdString);
-            const lastRecord = productionRecords[0]; // Já vem ordenado por created_at desc
-
-            // Usar valores do último registro de produção
-            const currentProduction = lastRecord?.good_production || 0;
-
-            // Calcular meta baseada no último registro com planned_time
+            
+            let currentProduction = 0;
             let calculatedMeta = 0;
-            let calculatedOEE = 0;
-            let calculatedAvailability = 0;
-            let calculatedPerformance = 0;
-            let calculatedQuality = 100; // Assumindo 100% de qualidade por padrão
-
-            if (lastRecord && lastRecord.planned_time && lastRecord.planned_time > 0 && machine.code) {
-              const material = materialsData.find(mat => mat.Codigo === machine.code);
-              if (material) {
-                const plannedTime = lastRecord.planned_time;
-                const downtimeMinutes = lastRecord.downtime_minutes || 0;
-                const actualRuntime = plannedTime - downtimeMinutes;
+            let lastRecord = null;
+            
+            try {
+              if (isApiAvailable) {
+                // Buscar good_production do oee_history para data atual
+                console.log(`🔍 Buscando dados OEE para máquina ${machineIdString} via API`);
+                const today = new Date().toISOString().split('T')[0];
+                const oeeResponse = await fetch(`http://localhost:3001/api/oee-history?machine_id=${machineIdString}&date=${today}&limit=1`);
                 
-                // Meta = PPm * Tempo Planejado (min) * 85%
-                calculatedMeta = Math.round(material.PPm * plannedTime * 0.85);
+                if (oeeResponse.ok) {
+                  const oeeData = await oeeResponse.json();
+                  if (oeeData.records && oeeData.records.length > 0) {
+                    // Se existe registro OEE de hoje, usar good_production dele
+                    currentProduction = oeeData.records[0].good_production || 0;
+                    console.log(`✅ Good production do OEE history: ${currentProduction}`);
+                  }
+                }
                 
-                // Usar função de cálculo do mongoService
-                const oeeMetrics = mockMongoService.calculateOeeMetrics(
-                   currentProduction,
-                   plannedTime,
-                   downtimeMinutes,
-                   calculatedMeta
-                 );
-                
-                calculatedOEE = oeeMetrics.oee;
-                calculatedAvailability = oeeMetrics.availability;
-                calculatedPerformance = oeeMetrics.performance;
-                calculatedQuality = oeeMetrics.quality;
+                // Buscar último registro de produção para calcular meta
+                const prodResponse = await fetch(`http://localhost:3001/api/production-records?machine_id=${machineIdString}&limit=1`);
+                if (prodResponse.ok) {
+                  const prodData = await prodResponse.json();
+                  lastRecord = prodData.records?.[0];
+                  
+                  // Se não encontrou good_production no OEE, usar do production record
+                  if (currentProduction === 0 && lastRecord) {
+                    currentProduction = lastRecord.good_production || 0;
+                  }
+                }
               } else {
-                // Fallback para máquinas sem código de material específico
-                const plannedTime = lastRecord.planned_time;
-                const downtimeMinutes = lastRecord.downtime_minutes || 0;
-                
-                // PPm padrão de 65 para máquinas sem material específico
-                const defaultPPm = 65;
-                calculatedMeta = Math.round(defaultPPm * plannedTime * 0.85);
-                
-                const oeeMetrics = mockMongoService.calculateOeeMetrics(
-                   currentProduction,
-                   plannedTime,
-                   downtimeMinutes,
-                   calculatedMeta
-                 );
-                
-                calculatedOEE = oeeMetrics.oee;
-                calculatedAvailability = oeeMetrics.availability;
-                calculatedPerformance = oeeMetrics.performance;
-                calculatedQuality = oeeMetrics.quality;
+                // Fallback para mock service
+                const productionRecords = await mockMongoService.getProductionRecords(machineIdString);
+                lastRecord = productionRecords[0];
+                currentProduction = lastRecord?.good_production || machine.current_production || 0;
               }
+              
+              // Calcular meta baseada no material: PPm * planned_time * 85%
+              if (lastRecord && lastRecord.material_code && lastRecord.planned_time) {
+                const material = materialsData.find(m => m.Codigo === lastRecord.material_code);
+                if (material) {
+                  // Meta = PPm * planned_time (em minutos) * 85%
+                  calculatedMeta = Math.round(material.PPm * lastRecord.planned_time * 0.85);
+                  console.log(`✅ Meta calculada: ${material.PPm} PPm * ${lastRecord.planned_time}min * 85% = ${calculatedMeta}`);
+                }
+              }
+              
+            } catch (error) {
+              console.warn(`⚠️ Erro ao buscar dados para máquina ${machineIdString}:`, error);
+              currentProduction = machine.current_production || 0;
+            }
+
+            // Fallback para meta se não foi calculada
+            if (calculatedMeta === 0) {
+              calculatedMeta = machine.target_production || 0;
+            }
+            
+            // Se não tem meta definida, usar valores padrão baseados no código da máquina
+            if (calculatedMeta === 0) {
+              switch (machine.code) {
+                case 'EXT-001': calculatedMeta = 1200; break;
+                case 'INJ-002': calculatedMeta = 600; break;
+                case 'LMA-003': calculatedMeta = 1800; break;
+                case 'PRH-004': calculatedMeta = 400; break;
+                case 'CNC-005': calculatedMeta = 250; break;
+                case 'EA01': calculatedMeta = 1000; break;
+                default: calculatedMeta = 1000; // Meta padrão genérica
+              }
+            }
+            
+            // Calcular OEE baseado nos registros de produção reais
+            let calculatedAvailability, calculatedPerformance, calculatedQuality, calculatedOEE;
+            
+            if (lastRecord) {
+              // Usar dados do último registro de produção para cálculo correto do OEE
+              const oeeMetrics = mockMongoService.calculateOeeMetrics(
+                lastRecord.good_production || 0,
+                lastRecord.planned_time || 480, // 8 horas padrão em minutos
+                lastRecord.downtime_minutes || 0,
+                calculatedMeta
+              );
+              
+              calculatedAvailability = oeeMetrics.availability;
+              calculatedPerformance = oeeMetrics.performance;
+              calculatedQuality = oeeMetrics.quality;
+              calculatedOEE = oeeMetrics.oee;
+            } else {
+              // Se não há registro, usar valores da máquina ou padrões
+              calculatedAvailability = machine.availability || 87.95;
+              calculatedPerformance = machine.performance || 96.70;
+              calculatedQuality = machine.quality || 100.0;
+              calculatedOEE = (calculatedAvailability * calculatedPerformance * calculatedQuality) / 10000;
             }
 
             return {
@@ -326,6 +364,19 @@ export function useMachines() {
 
   useEffect(() => {
     fetchMachines();
+    
+    // Listener para atualização automática quando salvar produção
+    const handleMachineDataUpdate = (event: CustomEvent) => {
+      console.log('🔄 Dados da máquina atualizados, recarregando...', event.detail);
+      fetchMachines(); // Recarregar dados automaticamente
+    };
+    
+    window.addEventListener('machineDataUpdated', handleMachineDataUpdate as EventListener);
+    
+    // Cleanup do listener
+    return () => {
+      window.removeEventListener('machineDataUpdated', handleMachineDataUpdate as EventListener);
+    };
   }, []);
 
   return {

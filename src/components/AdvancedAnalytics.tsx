@@ -8,7 +8,26 @@ import { Progress } from '@/components/ui/progress';
 import { OeeChart } from '@/components/OeeChart';
 import { useHistoricalData } from '@/hooks/useHistoricalData';
 import { useMachines } from '@/hooks/useMachines';
-import { TrendingUp, AlertTriangle, Clock, Zap, Target, BarChart3 } from 'lucide-react';
+import { 
+  TrendingUp, 
+  AlertTriangle, 
+  Clock, 
+  Zap, 
+  Target, 
+  BarChart3, 
+  Activity, 
+  Settings, 
+  PieChart, 
+  LineChart, 
+  Shield, 
+  CheckCircle, 
+  XCircle, 
+  Gauge,
+  Factory,
+  Calendar,
+  TrendingDown,
+  Minus
+} from 'lucide-react';
 
 export function AdvancedAnalytics() {
   const [selectedMachine, setSelectedMachine] = useState<string>('all');
@@ -47,132 +66,393 @@ export function AdvancedAnalytics() {
   if (!data) return null;
 
   return (
-    <div className="space-y-6">
-      {/* Header com indicação do mês atual */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Análises Avançadas</h2>
-          <p className="text-sm text-muted-foreground">
-            Produtividade mensal - {new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-          </p>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-4">
-          <Select value={selectedMachine} onValueChange={setSelectedMachine}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as Máquinas</SelectItem>
-              {machines.map((machine) => (
-                <SelectItem key={machine.id} value={machine.id}>
-                  {machine.code} - {machine.name}
+    <div className="space-y-8">
+      {/* Header aprimorado com melhor hierarquia visual */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-xl p-6 border border-blue-100 dark:border-blue-800">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-lg">
+              <BarChart3 className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                Análises Avançadas
+                <Badge variant="secondary" className="text-xs">
+                  <Calendar className="h-3 w-3 mr-1" />
+                  {new Date().toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' })}
+                </Badge>
+              </h2>
+              <p className="text-sm text-blue-600 dark:text-blue-400 font-medium mt-1">
+                Dashboard de Performance e Insights - {new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Select value={selectedMachine} onValueChange={setSelectedMachine}>
+              <SelectTrigger className="w-[220px] bg-white dark:bg-gray-800 border-blue-200 dark:border-blue-700 shadow-sm">
+                <Factory className="h-4 w-4 mr-2 text-blue-500" />
+                <SelectValue placeholder="Selecionar máquina" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="font-medium">
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-4 w-4 text-blue-500" />
+                    Todas as Máquinas
+                  </div>
                 </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                {machines.map((machine) => (
+                  <SelectItem key={machine.id} value={machine.id}>
+                    <div className="flex items-center gap-2">
+                      <Factory className="h-4 w-4 text-gray-500" />
+                      {machine.code} - {machine.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
+      {/* KPI Cards aprimorados com cores intuitivas e melhor design */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Card OEE - Verde para bom desempenho */}
+        <Card className={`transition-all duration-200 hover:shadow-lg border-l-4 ${
+          data.avgOee >= 75 ? 'border-l-green-500 bg-green-50/50 dark:bg-green-950/10' :
+          data.avgOee >= 60 ? 'border-l-yellow-500 bg-yellow-50/50 dark:bg-yellow-950/10' :
+          'border-l-red-500 bg-red-50/50 dark:bg-red-950/10'
+        }`}>
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">OEE Médio (Mês Atual)</p>
-                <p className="text-2xl font-bold">{data.avgOee.toFixed(1)}%</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                  <Gauge className="h-4 w-4" />
+                  OEE Médio (Mês Atual)
+                </p>
+                <p className={`text-3xl font-bold mt-1 ${
+                  data.avgOee >= 75 ? 'text-green-600 dark:text-green-400' :
+                  data.avgOee >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
+                  'text-red-600 dark:text-red-400'
+                }`}>
+                  {data.avgOee.toFixed(1)}%
+                </p>
               </div>
-              <TrendingUp className="h-8 w-8 text-primary" />
+              <div className={`p-3 rounded-full ${
+                data.avgOee >= 75 ? 'bg-green-100 dark:bg-green-900' :
+                data.avgOee >= 60 ? 'bg-yellow-100 dark:bg-yellow-900' :
+                'bg-red-100 dark:bg-red-900'
+              }`}>
+                {data.trend > 0 ? (
+                  <TrendingUp className={`h-6 w-6 ${
+                    data.avgOee >= 75 ? 'text-green-600 dark:text-green-400' :
+                    data.avgOee >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
+                    'text-red-600 dark:text-red-400'
+                  }`} />
+                ) : data.trend < 0 ? (
+                  <TrendingDown className={`h-6 w-6 ${
+                    data.avgOee >= 75 ? 'text-green-600 dark:text-green-400' :
+                    data.avgOee >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
+                    'text-red-600 dark:text-red-400'
+                  }`} />
+                ) : (
+                  <Minus className={`h-6 w-6 ${
+                    data.avgOee >= 75 ? 'text-green-600 dark:text-green-400' :
+                    data.avgOee >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
+                    'text-red-600 dark:text-red-400'
+                  }`} />
+                )}
+              </div>
             </div>
-            <Progress value={data.avgOee} className="mt-2" />
-            <p className="text-xs text-muted-foreground mt-1">
-              Tendência: {data.trend > 0 ? '+' : ''}{data.trend.toFixed(1)}%
-            </p>
+            <Progress 
+              value={data.avgOee} 
+              className={`mt-3 h-2 ${
+                data.avgOee >= 75 ? '[&>div]:bg-green-500' :
+                data.avgOee >= 60 ? '[&>div]:bg-yellow-500' :
+                '[&>div]:bg-red-500'
+              }`} 
+            />
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Tendência: {data.trend > 0 ? '+' : ''}{data.trend.toFixed(1)}%
+              </p>
+              <Badge variant={data.avgOee >= 75 ? 'default' : data.avgOee >= 60 ? 'secondary' : 'destructive'} className="text-xs">
+                {data.avgOee >= 75 ? 'Excelente' : data.avgOee >= 60 ? 'Bom' : 'Crítico'}
+              </Badge>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Card Tempo Parado - Vermelho para alertas */}
+        <Card className="transition-all duration-200 hover:shadow-lg border-l-4 border-l-red-500 bg-red-50/50 dark:bg-red-950/10">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Tempo Parado Total</p>
-                <p className="text-2xl font-bold">{data.totalDowntime.toFixed(0)}h</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Tempo Parado Total
+                </p>
+                <p className="text-3xl font-bold text-red-600 dark:text-red-400 mt-1">
+                  {data.totalDowntime.toFixed(0)}h
+                </p>
               </div>
-              <Clock className="h-8 w-8 text-destructive" />
+              <div className="p-3 bg-red-100 dark:bg-red-900 rounded-full">
+                <XCircle className="h-6 w-6 text-red-600 dark:text-red-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              MTBF: {data.mtbf.toFixed(1)}h | Eventos: {data.downtimeEvents}
-            </p>
+            <div className="mt-3 space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">MTBF:</span>
+                <span className="font-medium text-red-600">{data.mtbf.toFixed(1)}h</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-gray-500">Eventos:</span>
+                <span className="font-medium text-red-600">{data.downtimeEvents}</span>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Card Produção - Azul para produtividade */}
+        <Card className="transition-all duration-200 hover:shadow-lg border-l-4 border-l-blue-500 bg-blue-50/50 dark:bg-blue-950/10">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Produção Total</p>
-                <p className="text-2xl font-bold">{data.totalProduction.toLocaleString()}</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Produção Total
+                </p>
+                <p className="text-3xl font-bold text-blue-600 dark:text-blue-400 mt-1">
+                  {data.totalProduction.toLocaleString()}
+                </p>
               </div>
-              <Zap className="h-8 w-8 text-primary" />
+              <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-full">
+                <Factory className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Meta Atingida: {((data.totalProduction / data.totalTarget) * 100).toFixed(1)}%
-            </p>
+            <div className="mt-3">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-gray-500">Meta Atingida</span>
+                <span className="text-xs font-medium text-blue-600">
+                  {((data.totalProduction / data.totalTarget) * 100).toFixed(1)}%
+                </span>
+              </div>
+              <Progress 
+                value={(data.totalProduction / data.totalTarget) * 100} 
+                className="h-2 [&>div]:bg-blue-500" 
+              />
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
+        {/* Card Alertas - Laranja/Vermelho baseado na quantidade */}
+        <Card className={`transition-all duration-200 hover:shadow-lg border-l-4 ${
+          data.criticalAlerts === 0 ? 'border-l-green-500 bg-green-50/50 dark:bg-green-950/10' :
+          data.criticalAlerts <= 3 ? 'border-l-yellow-500 bg-yellow-50/50 dark:bg-yellow-950/10' :
+          'border-l-red-500 bg-red-50/50 dark:bg-red-950/10'
+        }`}>
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Alertas Críticos</p>
-                <p className="text-2xl font-bold">{data.criticalAlerts}</p>
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  Alertas Críticos
+                </p>
+                <p className={`text-3xl font-bold mt-1 ${
+                  data.criticalAlerts === 0 ? 'text-green-600 dark:text-green-400' :
+                  data.criticalAlerts <= 3 ? 'text-yellow-600 dark:text-yellow-400' :
+                  'text-red-600 dark:text-red-400'
+                }`}>
+                  {data.criticalAlerts}
+                </p>
               </div>
-              <AlertTriangle className="h-8 w-8 text-destructive" />
+              <div className={`p-3 rounded-full ${
+                data.criticalAlerts === 0 ? 'bg-green-100 dark:bg-green-900' :
+                data.criticalAlerts <= 3 ? 'bg-yellow-100 dark:bg-yellow-900' :
+                'bg-red-100 dark:bg-red-900'
+              }`}>
+                {data.criticalAlerts === 0 ? (
+                  <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-400" />
+                ) : (
+                  <AlertTriangle className={`h-6 w-6 ${
+                    data.criticalAlerts <= 3 ? 'text-yellow-600 dark:text-yellow-400' :
+                    'text-red-600 dark:text-red-400'
+                  }`} />
+                )}
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Mês atual
-            </p>
+            <div className="mt-3">
+              <Badge 
+                variant={data.criticalAlerts === 0 ? 'default' : data.criticalAlerts <= 3 ? 'secondary' : 'destructive'}
+                className="text-xs"
+              >
+                {data.criticalAlerts === 0 ? 'Sistema Normal' :
+                 data.criticalAlerts <= 3 ? 'Atenção Necessária' :
+                 'Intervenção Urgente'}
+              </Badge>
+              <p className="text-xs text-gray-500 mt-1">Mês atual</p>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Analytics Tabs */}
-      <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-          <TabsTrigger value="productivity">Produtividade Mensal</TabsTrigger>
-          <TabsTrigger value="downtime">Análise de Paradas</TabsTrigger>
-          <TabsTrigger value="trends">Tendências do Mês</TabsTrigger>
-          <TabsTrigger value="insights">Insights e Riscos</TabsTrigger>
-        </TabsList>
+      {/* Analytics Tabs aprimoradas com ícones e melhor design */}
+      <Tabs defaultValue="overview" className="space-y-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg p-1 shadow-sm border">
+          <TabsList className="grid w-full grid-cols-5 bg-transparent gap-1">
+            <TabsTrigger 
+              value="overview" 
+              className="flex items-center gap-2 data-[state=active]:bg-blue-100 data-[state=active]:text-blue-700 dark:data-[state=active]:bg-blue-900 dark:data-[state=active]:text-blue-300"
+            >
+              <Gauge className="h-4 w-4" />
+              <span className="hidden sm:inline">Visão Geral</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="productivity" 
+              className="flex items-center gap-2 data-[state=active]:bg-green-100 data-[state=active]:text-green-700 dark:data-[state=active]:bg-green-900 dark:data-[state=active]:text-green-300"
+            >
+              <Activity className="h-4 w-4" />
+              <span className="hidden sm:inline">Produtividade</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="downtime" 
+              className="flex items-center gap-2 data-[state=active]:bg-red-100 data-[state=active]:text-red-700 dark:data-[state=active]:bg-red-900 dark:data-[state=active]:text-red-300"
+            >
+              <XCircle className="h-4 w-4" />
+              <span className="hidden sm:inline">Paradas</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="trends" 
+              className="flex items-center gap-2 data-[state=active]:bg-purple-100 data-[state=active]:text-purple-700 dark:data-[state=active]:bg-purple-900 dark:data-[state=active]:text-purple-300"
+            >
+              <LineChart className="h-4 w-4" />
+              <span className="hidden sm:inline">Tendências</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="insights" 
+              className="flex items-center gap-2 data-[state=active]:bg-orange-100 data-[state=active]:text-orange-700 dark:data-[state=active]:bg-orange-900 dark:data-[state=active]:text-orange-300"
+            >
+              <Target className="h-4 w-4" />
+              <span className="hidden sm:inline">Insights</span>
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-        <TabsContent value="overview" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Componentes OEE - Média do Mês Atual</CardTitle>
+        <TabsContent value="overview" className="space-y-6">
+          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-blue-200 dark:border-blue-800">
+            <CardHeader className="pb-4">
+              <CardTitle className="flex items-center gap-3 text-xl text-blue-900 dark:text-blue-100">
+                <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                  <Gauge className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                Componentes OEE - Análise Detalhada
+                <Badge variant="outline" className="ml-auto text-blue-600 border-blue-300">
+                  Mês Atual
+                </Badge>
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4 p-6">
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-muted-foreground">Disponibilidade</span>
-                  <span className="text-sm font-bold">{data.avgAvailability.toFixed(1)}%</span>
+            <CardContent className="space-y-6 p-6">
+              {/* Disponibilidade */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-green-200 dark:border-green-800">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-green-100 dark:bg-green-900 rounded-full">
+                      <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    </div>
+                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Disponibilidade</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-bold text-green-600 dark:text-green-400">
+                      {data.avgAvailability.toFixed(1)}%
+                    </span>
+                    <Badge 
+                      variant={data.avgAvailability >= 85 ? 'default' : data.avgAvailability >= 70 ? 'secondary' : 'destructive'} 
+                      className="ml-2 text-xs"
+                    >
+                      {data.avgAvailability >= 85 ? 'Excelente' : data.avgAvailability >= 70 ? 'Bom' : 'Crítico'}
+                    </Badge>
+                  </div>
                 </div>
-                <Progress value={data.avgAvailability} className="h-3" />
+                <Progress 
+                  value={data.avgAvailability} 
+                  className="h-3 [&>div]:bg-gradient-to-r [&>div]:from-green-500 [&>div]:to-green-600" 
+                />
+                <p className="text-xs text-gray-500 mt-2">Tempo de operação vs tempo planejado</p>
               </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-muted-foreground">Performance</span>
-                  <span className="text-sm font-bold">{data.avgPerformance.toFixed(1)}%</span>
+
+              {/* Performance */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-full">
+                      <Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Performance</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                      {data.avgPerformance.toFixed(1)}%
+                    </span>
+                    <Badge 
+                      variant={data.avgPerformance >= 85 ? 'default' : data.avgPerformance >= 70 ? 'secondary' : 'destructive'} 
+                      className="ml-2 text-xs"
+                    >
+                      {data.avgPerformance >= 85 ? 'Excelente' : data.avgPerformance >= 70 ? 'Bom' : 'Crítico'}
+                    </Badge>
+                  </div>
                 </div>
-                <Progress value={data.avgPerformance} className="h-3" />
+                <Progress 
+                  value={data.avgPerformance} 
+                  className="h-3 [&>div]:bg-gradient-to-r [&>div]:from-blue-500 [&>div]:to-blue-600" 
+                />
+                <p className="text-xs text-gray-500 mt-2">Velocidade real vs velocidade ideal</p>
               </div>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-medium text-muted-foreground">Qualidade</span>
-                  <span className="text-sm font-bold">{data.avgQuality.toFixed(1)}%</span>
+
+              {/* Qualidade */}
+              <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-purple-100 dark:bg-purple-900 rounded-full">
+                      <Shield className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                    </div>
+                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Qualidade</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                      {data.avgQuality.toFixed(1)}%
+                    </span>
+                    <Badge 
+                      variant={data.avgQuality >= 95 ? 'default' : data.avgQuality >= 90 ? 'secondary' : 'destructive'} 
+                      className="ml-2 text-xs"
+                    >
+                      {data.avgQuality >= 95 ? 'Excelente' : data.avgQuality >= 90 ? 'Bom' : 'Crítico'}
+                    </Badge>
+                  </div>
                 </div>
-                <Progress value={data.avgQuality} className="h-3" />
+                <Progress 
+                  value={data.avgQuality} 
+                  className="h-3 [&>div]:bg-gradient-to-r [&>div]:from-purple-500 [&>div]:to-purple-600" 
+                />
+                <p className="text-xs text-gray-500 mt-2">Produtos bons vs total produzido</p>
+              </div>
+
+              {/* Resumo OEE */}
+              <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 rounded-lg p-4 border-2 border-dashed border-gray-300 dark:border-gray-600">
+                <div className="text-center">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">OEE Global Calculado</p>
+                  <p className={`text-4xl font-bold mb-2 ${
+                    data.avgOee >= 75 ? 'text-green-600 dark:text-green-400' :
+                    data.avgOee >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
+                    'text-red-600 dark:text-red-400'
+                  }`}>
+                    {data.avgOee.toFixed(1)}%
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Disponibilidade × Performance × Qualidade
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {data.avgAvailability.toFixed(1)}% × {data.avgPerformance.toFixed(1)}% × {data.avgQuality.toFixed(1)}%
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>

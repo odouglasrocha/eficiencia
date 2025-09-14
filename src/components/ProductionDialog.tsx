@@ -52,7 +52,7 @@ interface ProductionDialogProps {
 export function ProductionDialog({ machineId, onAdd, open, onOpenChange }: ProductionDialogProps) {
   const { machines } = useMachines();
   const { reasons } = useDowntimeReasons();
-  const { createOrUpdateProductionRecord, loading: isLoading } = useProductionRecords();
+  const { upsertProductionRecord, loading: isLoading } = useProductionRecords();
 
   const [formData, setFormData] = useState<ProductionData>({
     machineId: machineId || "",
@@ -215,13 +215,22 @@ export function ProductionDialog({ machineId, onAdd, open, onOpenChange }: Produ
     }
     
     try {
-      // Usar a nova lógica de upsert que automaticamente cria registros no oee_history
-      await createOrUpdateProductionRecord(formData);
+      // Usar upsert para substituir registros existentes da mesma máquina
+      const result = await upsertProductionRecord(formData);
+      
+      // ✅ FEEDBACK VISUAL MELHORADO
+      const actionText = result?.action === 'updated' ? 'atualizado' : 'criado';
+      toast({
+        title: "✅ Produção Salva!",
+        description: `Registro ${actionText} com sucesso. Lista e KPIs atualizados automaticamente.`,
+        variant: "default",
+      });
       
       if (onAdd) {
         await onAdd(formData);
       }
       
+      // Fechar dialog e limpar formulário
       onOpenChange?.(false);
       setFormData({
         machineId: machineId || "",
@@ -235,8 +244,12 @@ export function ProductionDialog({ machineId, onAdd, open, onOpenChange }: Produ
         downtimeEvents: [],
         shift: undefined
       });
+      
+      console.log('🎉 Registro de produção salvo e interface atualizada automaticamente');
+      
     } catch (error) {
-      // Erro já tratado no hook
+      // Erro já tratado no hook useProductionRecords
+      console.error('❌ Erro ao salvar registro de produção:', error);
     }
   };
 

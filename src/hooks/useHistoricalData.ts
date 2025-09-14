@@ -71,11 +71,47 @@ export function useHistoricalData(machineId?: string) {
         const endOfPreviousMonth = endOfMonth(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
 
         // Fetch OEE history from current month
-        const oeeData = await mockMongoService.getOeeHistory(
-          machineId || '',
-          startOfCurrentMonth,
-          endOfCurrentMonth
-        );
+        let oeeData;
+        const isOeeApiAvailable = await productionRecordService.isApiAvailable();
+        
+        if (isOeeApiAvailable) {
+           console.log('✅ Usando API MongoDB real para histórico OEE');
+           try {
+             const response = await fetch(`http://localhost:3001/api/oee-history/${machineId}?start_date=${startOfCurrentMonth.toISOString()}&end_date=${endOfCurrentMonth.toISOString()}&limit=1000`);
+             if (response.ok) {
+               oeeData = await response.json();
+               // Converter formato para compatibilidade
+               oeeData = oeeData.map((entry: any) => ({
+                 timestamp: entry.timestamp,
+                 oee: entry.oee,
+                 availability: entry.availability,
+                 performance: entry.performance,
+                 quality: entry.quality
+               }));
+             } else {
+               console.log('ℹ️ Fallback para mockMongoService para histórico OEE');
+               oeeData = await mockMongoService.getOeeHistory(
+                 machineId || '',
+                 startOfCurrentMonth,
+                 endOfCurrentMonth
+               );
+             }
+           } catch (error) {
+             console.log('ℹ️ Erro na API, usando mockMongoService para histórico OEE');
+             oeeData = await mockMongoService.getOeeHistory(
+               machineId || '',
+               startOfCurrentMonth,
+               endOfCurrentMonth
+             );
+           }
+         } else {
+           console.log('ℹ️ Usando mockMongoService para histórico OEE');
+           oeeData = await mockMongoService.getOeeHistory(
+             machineId || '',
+             startOfCurrentMonth,
+             endOfCurrentMonth
+           );
+         }
 
         // Fetch downtime events from current month
         const downtimeData = await mockMongoService.getDowntimeEvents(machineId);

@@ -33,6 +33,7 @@ import {
 } from "@/data/mockData";
 // import mockMongoService from "@/services/mockMongoService"; // Removido - usando userProfileServiceHybrid
 import { useMachines } from "@/hooks/useMachines";
+import { useProductionRefresh } from "@/hooks/useProductionRefresh";
 import { AddMachineDialog } from "@/components/AddMachineDialog";
 import { ProductionDialog } from "@/components/ProductionDialog";
 import { DeleteProductionDialog } from "@/components/DeleteProductionDialog";
@@ -65,7 +66,25 @@ const Index = () => {
   const [productionDialogOpen, setProductionDialogOpen] = useState(false);
   const [selectedMachineForProduction, setSelectedMachineForProduction] = useState<string | null>(null);
   // Hooks para gerenciar máquinas e dados
-  const { machines, loading, createMachine, updateMachine, deleteMachine } = useMachines();
+  const { machines, loading, createMachine, updateMachine, deleteMachine, fetchMachines } = useMachines();
+  
+  // ✅ REFRESH AUTOMÁTICO IMPLEMENTADO
+  // Hook para atualizar dados automaticamente após salvar produção
+  useProductionRefresh({
+    onRefresh: async (event) => {
+      console.log('🔄 Atualizando dados após salvar produção:', event);
+      // Recarregar dados das máquinas para atualizar KPIs
+      await fetchMachines();
+    },
+    onKPIUpdate: async () => {
+      console.log('📊 Atualizando KPIs...');
+      await fetchMachines();
+    },
+    onListUpdate: async () => {
+      console.log('📋 Atualizando lista de registros...');
+      await fetchMachines();
+    }
+  });
   const alertedMachinesRef = useRef<Set<string>>(new Set());
 
   // Simulação de alertas em tempo real
@@ -130,30 +149,32 @@ const Index = () => {
     const machine = machines.find(m => m.id === machineId);
     if (!machine) return;
 
-    const confirmed = window.confirm(`Tem certeza que deseja excluir a máquina "${machine.name}" e todos os registros relacionados? Esta ação não pode ser desfeita.`);
+    const confirmed = window.confirm(
+      `⚠️ ATENÇÃO: EXCLUSÃO PERMANENTE\n\n` +
+      `Tem certeza que deseja excluir a máquina "${machine.name}" (${machine.code})?\n\n` +
+      `Esta ação irá remover PERMANENTEMENTE:\n` +
+      `• A máquina do sistema\n` +
+      `• Todos os registros de produção\n` +
+      `• Todo o histórico OEE\n` +
+      `• Todos os dados relacionados\n\n` +
+      `Esta ação NÃO PODE ser desfeita!`
+    );
     
     if (confirmed) {
       try {
-        // TODO: Implementar deleteMachine com userProfileServiceHybrid
-        // await mockMongoService.deleteMachine(machineId);
+        console.log(`🔄 Iniciando exclusão da máquina: ${machine.name}`);
         
-        toast({
-          title: "Funcionalidade temporariamente desabilitada",
-          description: "A exclusão de máquinas será implementada em breve",
-          variant: "destructive",
-        });
+        // Usar a função deleteMachine do hook que já tem a lógica híbrida
+        await deleteMachine(machineId);
         
-        // // Forçar reload dos dados
-        // window.location.reload();
+        console.log(`✅ Máquina ${machine.name} excluída com sucesso`);
+        
       } catch (error) {
-        toast({
-          title: "Erro", 
-          description: "Não foi possível excluir a máquina",
-          variant: "destructive",
-        });
+        console.error('❌ Erro ao excluir máquina:', error);
+        // O toast de erro já é mostrado pelo hook deleteMachine
       }
     }
-  }, [machines, toast]);
+  }, [machines, deleteMachine, toast]);
 
   // Conditional returns after all hooks are called
   if (authLoading) {
@@ -458,12 +479,11 @@ const Index = () => {
           open={productionDialogOpen}
           onOpenChange={setProductionDialogOpen}
           onAdd={async (productionData) => {
-            toast({
-              title: "Produção Registrada",
-              description: `Dados de produção salvos com sucesso!`,
-            });
+            // ✅ REFRESH AUTOMÁTICO - Toast já é exibido no ProductionDialog
+            // Apenas fechar dialog e limpar seleção
             setProductionDialogOpen(false);
             setSelectedMachineForProduction(null);
+            console.log('🎯 Produção registrada, refresh automático ativado');
           }}
         />
       </main>

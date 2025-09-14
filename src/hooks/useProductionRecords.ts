@@ -357,13 +357,100 @@ export function useProductionRecords() {
     }
   };
 
+  // Upsert (criar ou atualizar) registro de produção
+  const upsertProductionRecord = async (data: ProductionRecordData) => {
+    try {
+      setLoading(true);
+      console.log('🔍 Upsert de registro de produção:', data);
+
+      // Validações
+      if (!data.machineId) {
+        throw new Error('ID da máquina é obrigatório');
+      }
+
+      if (data.materialCode) {
+        const material = materialsData.find(m => m.Codigo === data.materialCode);
+        if (!material) {
+          throw new Error('Material não encontrado');
+        }
+      }
+      
+      // Converter organicWaste para número
+      const organicWasteNumber = parseFloat(data.organicWaste.replace(',', '.'));
+
+      // Tentar usar API real primeiro
+      const isApiAvailable = await productionRecordService.isApiAvailable();
+      
+      let result;
+      if (isApiAvailable) {
+        console.log('✅ Usando API MongoDB real para upsert de registro de produção');
+        result = await productionRecordService.upsertProductionRecord({
+          machineId: data.machineId,
+          materialCode: data.materialCode,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          plannedTime: data.plannedTime,
+          goodProduction: data.goodProduction,
+          filmWaste: data.filmWaste,
+          organicWaste: organicWasteNumber,
+          downtimeEvents: data.downtimeEvents,
+          shift: data.shift,
+          operatorId: data.operatorId,
+          notes: data.notes,
+          batchNumber: data.batchNumber,
+          qualityCheck: data.qualityCheck,
+          temperature: data.temperature,
+          pressure: data.pressure,
+          speed: data.speed
+        });
+        
+        const actionText = result.action === 'created' ? 'criado' : 'atualizado';
+        toast({
+          title: "Sucesso",
+          description: `Registro ${actionText} com sucesso!`,
+        });
+      } else {
+        console.log('ℹ️ Usando productionService para upsert de registro de produção');
+        // Fallback para o serviço antigo
+        if (data.recordId) {
+          result = await updateProductionRecord(data.recordId, data);
+        } else {
+          result = await createProductionRecord(data);
+        }
+      }
+
+      // ✅ REFRESH AUTOMÁTICO IMPLEMENTADO
+      // Atualizar lista local de registros
+      await loadProductionRecords();
+      
+      // Disparar evento customizado para atualizar KPIs e indicadores
+      window.dispatchEvent(new CustomEvent('productionRecordSaved', {
+        detail: {
+          record: result,
+          machineId: data.machineId,
+          action: result.action || 'created'
+        }
+      }));
+      
+      console.log('🔄 Refresh automático executado - Lista e KPIs atualizados');
+
+      return result;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro no upsert do registro';
+      toast({
+        title: "Erro",
+        description: message,
+        variant: "destructive",
+      });
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Função para manter compatibilidade com código existente
   const createOrUpdateProductionRecord = async (data: ProductionRecordData) => {
-    if (data.recordId) {
-      return await updateProductionRecord(data.recordId, data);
-    } else {
-      return await createProductionRecord(data);
-    }
+    return await upsertProductionRecord(data);
   };
 
   // Carregar registros iniciais
@@ -384,6 +471,9 @@ export function useProductionRecords() {
     getProductionRecordById,
     deleteProductionRecord,
     loadProductionStatistics,
+    
+    // Upsert (criar ou atualizar inteligente)
+    upsertProductionRecord,
     
     // Compatibilidade
     createOrUpdateProductionRecord,

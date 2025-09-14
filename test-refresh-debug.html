@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Debug - Refresh Automático</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .log { background-color: #f8f9fa; padding: 10px; border-radius: 3px; margin: 10px 0; font-family: monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Debug - Refresh Automático e Upsert</h1>
+        
+        <div class="test-section info">
+            <h3>📋 Status do Sistema</h3>
+            <p><strong>Backend:</strong> <span id="backend-status">Verificando...</span></p>
+            <p><strong>Endpoint Upsert:</strong> <span id="upsert-status">Verificando...</span></p>
+            <p><strong>Eventos de Refresh:</strong> <span id="event-status">Aguardando...</span></p>
+        </div>
+
+        <div class="test-section">
+            <h3>🧪 Testes Disponíveis</h3>
+            <button onclick="testBackendConnection()">1. Testar Conexão Backend</button>
+            <button onclick="testUpsertEndpoint()">2. Testar Endpoint Upsert</button>
+            <button onclick="testRefreshEvent()">3. Testar Evento de Refresh</button>
+            <button onclick="simulateProductionSave()">4. Simular Salvamento Produção</button>
+            <button onclick="clearLog()">🗑️ Limpar Log</button>
+        </div>
+
+        <div class="test-section">
+            <h3>📊 Log de Testes</h3>
+            <div id="log" class="log">Aguardando testes...
+</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3001/api';
+        let logElement = document.getElementById('log');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            logElement.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        function clearLog() {
+            logElement.textContent = 'Log limpo...\n';
+        }
+        
+        function updateStatus(elementId, status, isSuccess = true) {
+            const element = document.getElementById(elementId);
+            element.textContent = status;
+            element.style.color = isSuccess ? 'green' : 'red';
+        }
+        
+        // Teste 1: Conexão Backend
+        async function testBackendConnection() {
+            log('🔍 Testando conexão com backend...');
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                if (response.ok) {
+                    log('✅ Backend conectado com sucesso!', 'success');
+                    updateStatus('backend-status', '✅ Conectado', true);
+                    return true;
+                } else {
+                    throw new Error(`Status: ${response.status}`);
+                }
+            } catch (error) {
+                log(`❌ Erro na conexão: ${error.message}`, 'error');
+                updateStatus('backend-status', '❌ Desconectado', false);
+                return false;
+            }
+        }
+        
+        // Teste 2: Endpoint Upsert
+        async function testUpsertEndpoint() {
+            log('🔍 Testando endpoint de upsert...');
+            
+            const testData = {
+                machine_id: 'debug_test_001',
+                start_time: new Date().toISOString(),
+                end_time: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+                good_production: 150,
+                film_waste: 8,
+                organic_waste: 3,
+                planned_time: 120,
+                downtime_minutes: 12,
+                material_code: 'DEBUG001',
+                shift: 'A',
+                operator_id: 'DEBUG_OP',
+                notes: 'Teste debug frontend'
+            };
+            
+            try {
+                const response = await fetch(`${API_BASE}/production-records/upsert`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testData)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    log(`✅ Upsert bem-sucedido! Ação: ${result.action}, ID: ${result.record._id}`, 'success');
+                    updateStatus('upsert-status', '✅ Funcionando', true);
+                    return result;
+                } else {
+                    throw new Error(`Status: ${response.status}`);
+                }
+            } catch (error) {
+                log(`❌ Erro no upsert: ${error.message}`, 'error');
+                updateStatus('upsert-status', '❌ Com erro', false);
+                return null;
+            }
+        }
+        
+        // Teste 3: Evento de Refresh
+        function testRefreshEvent() {
+            log('🔍 Testando sistema de eventos de refresh...');
+            
+            // Registrar listener para o evento
+            const eventListener = (event) => {
+                log(`✅ Evento de refresh recebido!`, 'success');
+                log(`📝 Detalhes: ${JSON.stringify(event.detail, null, 2)}`);
+                updateStatus('event-status', '✅ Funcionando', true);
+            };
+            
+            window.addEventListener('productionRecordSaved', eventListener);
+            
+            // Simular disparo do evento
+            setTimeout(() => {
+                const mockEvent = {
+                    record: { _id: 'test_123', action: 'created' },
+                    machineId: 'test_machine',
+                    action: 'created'
+                };
+                
+                log('🔄 Disparando evento de teste...');
+                window.dispatchEvent(new CustomEvent('productionRecordSaved', {
+                    detail: mockEvent
+                }));
+            }, 1000);
+            
+            // Remover listener após 5 segundos
+            setTimeout(() => {
+                window.removeEventListener('productionRecordSaved', eventListener);
+                log('🔄 Listener de evento removido.');
+            }, 5000);
+        }
+        
+        // Teste 4: Simulação Completa
+        async function simulateProductionSave() {
+            log('🎯 Iniciando simulação completa de salvamento...');
+            
+            // 1. Testar conexão
+            const connected = await testBackendConnection();
+            if (!connected) {
+                log('❌ Abortando: Backend não conectado', 'error');
+                return;
+            }
+            
+            // 2. Registrar listener de refresh
+            const refreshListener = (event) => {
+                log(`🔄 REFRESH AUTOMÁTICO ATIVADO!`, 'success');
+                log(`📊 Dados: ${JSON.stringify(event.detail, null, 2)}`);
+                updateStatus('event-status', '✅ Refresh ativo', true);
+            };
+            
+            window.addEventListener('productionRecordSaved', refreshListener);
+            
+            // 3. Executar upsert
+            const result = await testUpsertEndpoint();
+            
+            if (result) {
+                // 4. Disparar evento de refresh (simular comportamento do frontend)
+                log('🔄 Disparando evento de refresh automático...');
+                window.dispatchEvent(new CustomEvent('productionRecordSaved', {
+                    detail: {
+                        record: result.record,
+                        machineId: result.record.machine_id,
+                        action: result.action
+                    }
+                }));
+                
+                log('🎉 Simulação completa finalizada!', 'success');
+            } else {
+                log('❌ Simulação falhou no upsert', 'error');
+            }
+            
+            // Limpar listener
+            setTimeout(() => {
+                window.removeEventListener('productionRecordSaved', refreshListener);
+            }, 3000);
+        }
+        
+        // Inicialização automática
+        window.addEventListener('load', () => {
+            log('🚀 Sistema de debug carregado!');
+            log('📋 Execute os testes para diagnosticar o problema.');
+            
+            // Teste inicial de conexão
+            setTimeout(testBackendConnection, 1000);
+        });
+    </script>
+</body>
+</html>

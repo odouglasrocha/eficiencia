@@ -9,6 +9,95 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// SOLUÇÃO DEFINITIVA: Endpoint funcional de alteração de senha
+app.post('/api/change-password-working', async (req, res) => {
+  try {
+    console.log('🔄 ENDPOINT FUNCIONAL CHAMADO: /api/change-password-working');
+    const { userId, currentPassword, newPassword } = req.body;
+    
+    console.log('📋 Dados:', { userId, currentPassword: '***', newPassword: '***' });
+    
+    if (!userId || !currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Todos os campos são obrigatórios' });
+    }
+    
+    // Garantir conexão MongoDB
+    if (mongoose.connection.readyState !== 1) {
+      console.log('🔌 Reconectando ao MongoDB...');
+      await mongoose.connect(MONGODB_URI);
+    }
+    
+    console.log('✅ MongoDB conectado - Estado:', mongoose.connection.readyState);
+    
+    // Buscar usuário
+    const user = await User.findById(userId);
+    if (!user) {
+      console.log('❌ Usuário não encontrado');
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    console.log('✅ Usuário encontrado:', user.email);
+    
+    // Verificar senha atual
+    const isValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isValid) {
+      console.log('❌ Senha atual incorreta');
+      return res.status(400).json({ message: 'Senha atual incorreta' });
+    }
+    
+    console.log('✅ Senha atual válida');
+    
+    // Hash da nova senha
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log('✅ Nova senha hasheada');
+    
+    // Atualizar no MongoDB - FORÇAR COLEÇÃO USERS
+    console.log('💾 Iniciando atualização no MongoDB...');
+    console.log('🔍 Coleção alvo: users');
+    console.log('🆔 ID do usuário:', userId);
+    console.log('🔐 Hash da nova senha:', hashedPassword.substring(0, 20) + '...');
+    
+    const result = await User.updateOne(
+      { _id: userId },
+      { 
+        $set: { 
+          password: hashedPassword,
+          'security.password_changed_at': new Date(),
+          updated_at: new Date()
+        }
+      }
+    );
+    
+    console.log('📊 Resultado COMPLETO da atualização:', JSON.stringify(result, null, 2));
+    console.log('📈 Documentos encontrados (matchedCount):', result.matchedCount);
+    console.log('📝 Documentos modificados (modifiedCount):', result.modifiedCount);
+    
+    // Verificação adicional - buscar usuário novamente
+    const userAfterUpdate = await User.findById(userId);
+    console.log('🔍 Verificação pós-atualização:');
+    console.log('📧 Email:', userAfterUpdate.email);
+    console.log('🔐 Hash atual no banco:', userAfterUpdate.password.substring(0, 20) + '...');
+    console.log('⏰ Última alteração:', userAfterUpdate.security?.password_changed_at);
+    
+    if (result.modifiedCount === 1) {
+      console.log('🎉 SUCESSO: Senha alterada no MongoDB!');
+      res.json({ 
+        message: 'Senha alterada com sucesso!',
+        success: true,
+        modified: result.modifiedCount,
+        timestamp: new Date()
+      });
+    } else {
+      console.log('❌ Nenhum documento foi modificado');
+      res.status(500).json({ message: 'Erro: Nenhum documento foi modificado' });
+    }
+    
+  } catch (error) {
+    console.error('❌ ERRO:', error);
+    res.status(500).json({ message: 'Erro interno: ' + error.message });
+  }
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -46,7 +135,7 @@ const userSchema = new mongoose.Schema({
   updated_at: { type: Date, default: Date.now }
 });
 
-const User = mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema, 'users');
 
 // Schema da máquina
 const machineSchema = new mongoose.Schema({
@@ -143,6 +232,91 @@ machineSchema.pre('save', function(next) {
 });
 
 const Machine = mongoose.model('Machine', machineSchema);
+
+// Schema do histórico OEE
+const oeeHistorySchema = new mongoose.Schema({
+  machine_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Machine',
+    required: true,
+    index: true
+  },
+  production_record_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'ProductionRecord',
+    required: true,
+    index: true
+  },
+  timestamp: {
+    type: Date,
+    required: true,
+    index: true
+  },
+  oee: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 100
+  },
+  availability: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 100
+  },
+  performance: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 100
+  },
+  quality: {
+    type: Number,
+    required: true,
+    min: 0,
+    max: 100
+  },
+  good_production: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  total_waste: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  downtime_minutes: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  planned_time: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  shift: {
+    type: String,
+    enum: ['A', 'B', 'C', 'Manhã', 'Tarde', 'Noite']
+  },
+  operator_id: {
+    type: String
+  },
+  created_at: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: false }
+});
+
+// Índices compostos para otimização
+oeeHistorySchema.index({ machine_id: 1, timestamp: -1 });
+oeeHistorySchema.index({ timestamp: -1 });
+oeeHistorySchema.index({ machine_id: 1, shift: 1, timestamp: -1 });
+
+const OeeHistory = mongoose.model('OeeHistory', oeeHistorySchema);
 
 // Schema do registro de produção
 const productionRecordSchema = new mongoose.Schema({
@@ -267,18 +441,36 @@ productionRecordSchema.pre('save', function(next) {
   // Calcular métricas OEE se não foram fornecidas
   if (this.planned_time > 0) {
     // Disponibilidade = (Tempo Planejado - Tempo de Parada) / Tempo Planejado * 100
-    this.availability_calculated = ((this.planned_time - this.downtime_minutes) / this.planned_time) * 100;
+    this.availability_calculated = Math.min(100, Math.max(0, ((this.planned_time - this.downtime_minutes) / this.planned_time) * 100));
     
-    // Performance = Produção Real / Produção Planejada * 100 (assumindo produção planejada = planned_time)
-    const plannedProduction = this.planned_time; // Simplificado
-    this.performance_calculated = (this.good_production / plannedProduction) * 100;
+    // Performance = Produção Real / Produção Esperada * 100
+    // Usar a mesma lógica dos serviços para consistência
+    const actualRuntime = this.planned_time - this.downtime_minutes;
+    let performance = 0;
+    
+    // Buscar a meta de produção real baseada no material (se disponível)
+    // Por enquanto, usar uma taxa padrão mais realista baseada nos dados do sistema
+    const defaultProductionRate = 65; // PPm padrão baseado nos materiais do sistema
+    const targetProduction = this.planned_time * defaultProductionRate * 0.85; // 85% de eficiência esperada
+    
+    if (targetProduction > 0 && actualRuntime > 0) {
+      const expectedProduction = (targetProduction * actualRuntime) / this.planned_time;
+      performance = Math.min((this.good_production / expectedProduction) * 100, 100);
+    }
+    
+    this.performance_calculated = Math.min(100, Math.max(0, performance));
     
     // Qualidade = Produção Boa / (Produção Boa + Refugo) * 100
     const totalProduction = this.good_production + this.film_waste + this.organic_waste;
-    this.quality_calculated = totalProduction > 0 ? (this.good_production / totalProduction) * 100 : 100;
+    this.quality_calculated = totalProduction > 0 ? Math.min(100, Math.max(0, (this.good_production / totalProduction) * 100)) : 100;
     
     // OEE = Disponibilidade * Performance * Qualidade / 10000
-    this.oee_calculated = (this.availability_calculated * this.performance_calculated * this.quality_calculated) / 10000;
+    this.oee_calculated = Math.min(100, Math.max(0, (this.availability_calculated * this.performance_calculated * this.quality_calculated) / 10000));
+  } else {
+    this.availability_calculated = 0;
+    this.performance_calculated = 0;
+    this.quality_calculated = 0;
+    this.oee_calculated = 0;
   }
   
   next();
@@ -408,6 +600,238 @@ app.post('/api/auth/verify', async (req, res) => {
   } catch (error) {
     console.error('❌ Erro na verificação do token:', error);
     res.status(401).json({ message: 'Token inválido' });
+  }
+});
+
+// Teste simples
+app.put('/api/test-put', (req, res) => {
+  res.json({ message: 'PUT endpoint funcionando' });
+});
+
+// Endpoint de teste para alteração de senha (funcional)
+app.post('/api/test-change-password', async (req, res) => {
+  try {
+    console.log('🔄 TESTE: Iniciando alteração de senha...');
+    const { userId, currentPassword, newPassword } = req.body;
+    
+    console.log('📋 Dados recebidos:', { userId, currentPassword: '***', newPassword: '***' });
+    
+    // Conectar ao MongoDB
+    if (!mongoose.connection.readyState) {
+      console.log('🔌 Conectando ao MongoDB...');
+      await mongoose.connect(MONGODB_URI);
+    }
+    
+    console.log('✅ MongoDB conectado');
+    
+    // Buscar usuário
+    const user = await User.findById(userId);
+    if (!user) {
+      console.log('❌ Usuário não encontrado:', userId);
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    console.log('🔍 Usuário encontrado:', user.email);
+    console.log('🔐 Hash atual da senha:', user.password.substring(0, 20) + '...');
+    
+    // Verificar senha atual
+    const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+    console.log('🔍 Verificação de senha atual:', isValidPassword ? 'VÁLIDA' : 'INVÁLIDA');
+    
+    if (!isValidPassword) {
+      return res.status(400).json({ message: 'Senha atual incorreta' });
+    }
+    
+    // Hash da nova senha
+    console.log('🔐 Gerando hash da nova senha...');
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log('✅ Novo hash gerado:', hashedPassword.substring(0, 20) + '...');
+    
+    // Atualizar senha diretamente
+    const updateResult = await User.updateOne(
+      { _id: userId },
+      { 
+        $set: { 
+          password: hashedPassword,
+          'security.password_changed_at': new Date(),
+          updated_at: new Date()
+        }
+      }
+    );
+    
+    console.log('📊 Resultado da atualização:', updateResult);
+    
+    if (updateResult.modifiedCount === 1) {
+      console.log('✅ SUCESSO: Senha alterada no MongoDB!');
+      
+      // Verificar se realmente foi salvo
+      const updatedUser = await User.findById(userId);
+      console.log('🔍 Verificação: Novo hash salvo:', updatedUser.password.substring(0, 20) + '...');
+      
+      res.json({ 
+        message: 'Senha alterada com sucesso no MongoDB!',
+        modified: updateResult.modifiedCount,
+        newHashPreview: hashedPassword.substring(0, 20) + '...'
+      });
+    } else {
+      console.log('❌ ERRO: Nenhum documento foi modificado');
+      res.status(500).json({ message: 'Erro: Nenhum documento foi modificado' });
+    }
+    
+  } catch (error) {
+    console.error('❌ ERRO no teste de alteração de senha:', error);
+    res.status(500).json({ message: 'Erro interno: ' + error.message });
+  }
+});
+
+// Alterar senha do usuário (FUNCIONAL - CORRIGIDO)
+app.post('/api/users/:id/change-password', async (req, res) => {
+  console.log('🔄 ENDPOINT CHAMADO: POST /api/users/:id/change-password');
+  
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.params.id;
+    
+    console.log(`🔄 ALTERAÇÃO DE SENHA - Usuário: ${userId}`);
+    console.log('📋 Dados recebidos:', { currentPassword: '***', newPassword: '***' });
+    
+    // Validações básicas
+    if (!currentPassword || !newPassword) {
+      console.log('❌ Validação falhou: senhas não fornecidas');
+      return res.status(400).json({ message: 'Senha atual e nova senha são obrigatórias' });
+    }
+    
+    if (newPassword.length < 6) {
+      console.log('❌ Validação falhou: nova senha muito curta');
+      return res.status(400).json({ message: 'A nova senha deve ter pelo menos 6 caracteres' });
+    }
+    
+    // Garantir conexão com MongoDB
+    if (mongoose.connection.readyState !== 1) {
+      console.log('🔌 Reconectando ao MongoDB...');
+      await mongoose.connect(MONGODB_URI);
+    }
+    
+    console.log('✅ MongoDB conectado - Estado:', mongoose.connection.readyState);
+    
+    // Buscar usuário no MongoDB
+    const user = await User.findById(userId);
+    if (!user) {
+      console.log('❌ Usuário não encontrado no MongoDB:', userId);
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    console.log(`🔍 Usuário encontrado: ${user.email}`);
+    console.log('🔐 Hash atual da senha:', user.password.substring(0, 20) + '...');
+    
+    // Verificar senha atual com bcrypt
+    const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+    console.log('🔍 Verificação de senha atual:', isValidPassword ? 'VÁLIDA ✅' : 'INVÁLIDA ❌');
+    
+    if (!isValidPassword) {
+      console.log('❌ Senha atual incorreta - Acesso negado');
+      return res.status(400).json({ message: 'Senha atual incorreta' });
+    }
+    
+    // Gerar hash da nova senha
+    console.log('🔐 Gerando hash da nova senha com bcrypt...');
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    console.log('✅ Novo hash gerado:', hashedPassword.substring(0, 20) + '...');
+    
+    // Atualizar senha no MongoDB usando updateOne
+    console.log('💾 Atualizando senha no MongoDB...');
+    const updateResult = await User.updateOne(
+      { _id: userId },
+      { 
+        $set: { 
+          password: hashedPassword,
+          'security.password_changed_at': new Date(),
+          updated_at: new Date()
+        }
+      }
+    );
+    
+    console.log('📊 Resultado da operação updateOne:', JSON.stringify(updateResult, null, 2));
+    
+    // Verificar se a atualização foi bem-sucedida
+    if (updateResult.modifiedCount === 1) {
+      console.log('🎉 SUCESSO TOTAL: Senha alterada no MongoDB!');
+      
+      // Verificação final - buscar usuário novamente
+      const updatedUser = await User.findById(userId);
+      console.log('🔍 Verificação final - Novo hash no banco:', updatedUser.password.substring(0, 20) + '...');
+      
+      // Resposta de sucesso
+      res.json({ 
+        message: 'Senha alterada com sucesso no MongoDB!',
+        success: true,
+        modified: updateResult.modifiedCount,
+        timestamp: new Date().toISOString()
+      });
+      
+    } else {
+      console.log('❌ ERRO: Nenhum documento foi modificado no MongoDB');
+      console.log('📊 UpdateResult completo:', updateResult);
+      res.status(500).json({ 
+        message: 'Erro: Nenhum documento foi modificado',
+        updateResult: updateResult
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ ERRO CRÍTICO na alteração de senha:', error.message);
+    console.error('📋 Stack trace:', error.stack);
+    res.status(500).json({ 
+      message: 'Erro interno do servidor: ' + error.message,
+      error: error.name
+    });
+  }
+});
+
+// Alterar senha do usuário (PUT - mantido para compatibilidade)
+app.put('/api/users/:id/change-password', async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.params.id;
+    
+    // Validações
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Senha atual e nova senha são obrigatórias' });
+    }
+    
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'A nova senha deve ter pelo menos 6 caracteres' });
+    }
+    
+    // Buscar usuário
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    // Verificar senha atual
+    const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!isValidPassword) {
+      return res.status(400).json({ message: 'Senha atual incorreta' });
+    }
+    
+    // Hash da nova senha
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    // Atualizar senha
+    user.password = hashedPassword;
+    user.security = user.security || {};
+    user.security.password_changed_at = new Date();
+    user.updated_at = new Date();
+    
+    await user.save();
+    
+    console.log(`✅ Senha alterada para usuário: ${user.email}`);
+    res.json({ message: 'Senha alterada com sucesso' });
+    
+  } catch (error) {
+    console.error('❌ Erro ao alterar senha:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
   }
 });
 
@@ -590,20 +1014,69 @@ app.put('/api/machines/:id', async (req, res) => {
   }
 });
 
-// Deletar máquina
+// Deletar máquina e todos os registros relacionados
 app.delete('/api/machines/:id', async (req, res) => {
   try {
-    const machine = await Machine.findById(req.params.id);
+    const machineId = req.params.id;
+    
+    // Validar se o ID é um ObjectId válido
+    if (!mongoose.Types.ObjectId.isValid(machineId)) {
+      return res.status(400).json({ message: 'ID da máquina inválido' });
+    }
+    
+    const machine = await Machine.findById(machineId);
     
     if (!machine) {
       return res.status(404).json({ message: 'Máquina não encontrada' });
     }
     
-    await Machine.findByIdAndDelete(req.params.id);
+    console.log(`🔄 Iniciando exclusão da máquina: ${machine.name} (${machine.code})`);
     
-    console.log(`✅ Máquina deletada: ${machine.name} (${machine.code})`);
+    // Verificar registros relacionados antes da exclusão
+    const productionRecords = await ProductionRecord.countDocuments({ machine_id: machineId });
+    const oeeHistoryRecords = await OeeHistory.countDocuments({ machine_id: machineId });
     
-    res.json({ message: 'Máquina deletada com sucesso' });
+    console.log(`📊 Registros relacionados encontrados:`);
+    console.log(`   - Registros de produção: ${productionRecords}`);
+    console.log(`   - Histórico OEE: ${oeeHistoryRecords}`);
+    
+    // Excluir registros relacionados em ordem (integridade referencial)
+    
+    // 1. Excluir histórico OEE
+    if (oeeHistoryRecords > 0) {
+      const deletedOeeHistory = await OeeHistory.deleteMany({ machine_id: machineId });
+      console.log(`✅ ${deletedOeeHistory.deletedCount} registros de histórico OEE excluídos`);
+    }
+    
+    // 2. Excluir registros de produção
+    if (productionRecords > 0) {
+      const deletedProduction = await ProductionRecord.deleteMany({ machine_id: machineId });
+      console.log(`✅ ${deletedProduction.deletedCount} registros de produção excluídos`);
+    }
+    
+    // 3. Excluir a máquina
+    await Machine.findByIdAndDelete(machineId);
+    
+    console.log(`✅ Máquina excluída com sucesso: ${machine.name} (${machine.code})`);
+    console.log(`📋 Resumo da exclusão:`);
+    console.log(`   - Máquina: ${machine.name}`);
+    console.log(`   - Registros de produção removidos: ${productionRecords}`);
+    console.log(`   - Registros de histórico OEE removidos: ${oeeHistoryRecords}`);
+    
+    res.json({ 
+      message: 'Máquina e todos os registros relacionados excluídos com sucesso',
+      details: {
+        machine: {
+          id: machineId,
+          name: machine.name,
+          code: machine.code
+        },
+        deletedRecords: {
+          productionRecords,
+          oeeHistoryRecords
+        }
+      }
+    });
     
   } catch (error) {
     console.error('❌ Erro ao deletar máquina:', error);
@@ -735,6 +1208,47 @@ app.post('/api/production-records', async (req, res) => {
     }
     console.log('✅ Máquina encontrada:', machine.name);
     
+    // Verificar se já existe um registro com o mesmo batch_number (se fornecido)
+    if (batch_number) {
+      const existingByBatch = await ProductionRecord.findOne({ batch_number });
+      if (existingByBatch) {
+        console.log('⚠️ Registro já existe com batch_number:', batch_number);
+        return res.status(409).json({ 
+          message: 'Já existe um registro com este número de lote',
+          existing_record: existingByBatch
+        });
+      }
+    }
+    
+    // Verificar se já existe um registro ativo para a mesma máquina no mesmo período
+    const startDate = new Date(start_time);
+    const dayStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    
+    const existingInPeriod = await ProductionRecord.findOne({
+      machine_id,
+      start_time: {
+        $gte: dayStart,
+        $lt: dayEnd
+      },
+      shift: shift || null
+    });
+    
+    if (existingInPeriod) {
+      console.log('⚠️ Já existe registro para esta máquina no período:', {
+        machine_id,
+        date: dayStart.toISOString().split('T')[0],
+        shift: shift || 'sem turno',
+        existing_id: existingInPeriod._id
+      });
+      return res.status(409).json({ 
+        message: 'Já existe um registro para esta máquina no mesmo período e turno',
+        existing_record: existingInPeriod,
+        suggestion: 'Use PUT /api/production-records/' + existingInPeriod._id + ' para atualizar o registro existente'
+      });
+    }
+    
     // Criar registro de produção
     const newRecord = new ProductionRecord({
       machine_id,
@@ -758,6 +1272,31 @@ app.post('/api/production-records', async (req, res) => {
     });
     
     await newRecord.save();
+    
+    // Criar entrada no histórico OEE
+    try {
+      const historyEntry = new OeeHistory({
+        machine_id: newRecord.machine_id,
+        production_record_id: newRecord._id,
+        timestamp: newRecord.start_time,
+        oee: newRecord.oee_calculated || 0,
+        availability: newRecord.availability_calculated || 0,
+        performance: newRecord.performance_calculated || 0,
+        quality: newRecord.quality_calculated || 0,
+        good_production: newRecord.good_production,
+        total_waste: (newRecord.film_waste || 0) + (newRecord.organic_waste || 0),
+        downtime_minutes: newRecord.downtime_minutes,
+        planned_time: newRecord.planned_time,
+        shift: newRecord.shift,
+        operator_id: newRecord.operator_id
+      });
+      
+      await historyEntry.save();
+      console.log(`✅ Entrada no histórico OEE criada para registro ${newRecord._id}`);
+    } catch (historyError) {
+      console.error('⚠️ Erro ao criar entrada no histórico OEE:', historyError);
+      // Não falha a operação principal se o histórico falhar
+    }
     
     console.log(`✅ Novo registro de produção criado para máquina ${machine.name}`);
     
@@ -837,7 +1376,283 @@ app.delete('/api/production-records/:id', async (req, res) => {
   }
 });
 
-// Estatísticas de produção
+// Upsert (criar ou atualizar) registro de produção
+app.post('/api/production-records/upsert', async (req, res) => {
+  try {
+    console.log('🔍 Dados recebidos para upsert de registro de produção:', JSON.stringify(req.body, null, 2));
+    
+    const {
+      machine_id,
+      start_time,
+      end_time,
+      good_production,
+      film_waste,
+      organic_waste,
+      planned_time,
+      downtime_minutes,
+      downtime_reason,
+      material_code,
+      shift,
+      operator_id,
+      notes,
+      batch_number,
+      quality_check,
+      temperature,
+      pressure,
+      speed
+    } = req.body;
+    
+    // Validações obrigatórias
+    if (!machine_id || !start_time || good_production === undefined || 
+        film_waste === undefined || organic_waste === undefined || 
+        planned_time === undefined || downtime_minutes === undefined) {
+      console.log('❌ Validação falhou - campos obrigatórios ausentes');
+      return res.status(400).json({ 
+        message: 'Campos obrigatórios: machine_id, start_time, good_production, film_waste, organic_waste, planned_time, downtime_minutes' 
+      });
+    }
+    
+    // Validar machine_id
+    if (!mongoose.Types.ObjectId.isValid(machine_id)) {
+      return res.status(400).json({ message: 'ID da máquina inválido' });
+    }
+    
+    // Verificar se a máquina existe
+    const machine = await Machine.findById(machine_id);
+    if (!machine) {
+      return res.status(404).json({ message: 'Máquina não encontrada' });
+    }
+    
+    let existingRecord = null;
+    
+    // Procurar registro existente por batch_number (prioridade)
+    if (batch_number) {
+      existingRecord = await ProductionRecord.findOne({ batch_number });
+      console.log('🔍 Busca por batch_number:', batch_number, existingRecord ? 'encontrado' : 'não encontrado');
+    }
+    
+    // Se não encontrou por batch_number, procurar por máquina + período + turno
+    if (!existingRecord) {
+      const startDate = new Date(start_time);
+      const dayStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      
+      // Buscar por máquina + data (independente do turno) para evitar múltiplos registros por dia
+      const searchQuery = {
+        machine_id,
+        start_time: {
+          $gte: dayStart,
+          $lt: dayEnd
+        }
+        // Removido filtro por shift para permitir apenas 1 registro por máquina por dia
+      };
+      
+      console.log('🔍 Query de busca (máquina + data):', JSON.stringify({
+        machine_id,
+        dayStart: dayStart.toISOString(),
+        dayEnd: dayEnd.toISOString(),
+        note: 'Busca independente do turno - apenas 1 registro por máquina por dia'
+      }));
+      
+      // Primeiro, vamos ver quantos registros existem para esta máquina
+      const allRecordsForMachine = await ProductionRecord.find({ machine_id });
+      console.log(`🔍 Total de registros para máquina ${machine_id}:`, allRecordsForMachine.length);
+      
+      if (allRecordsForMachine.length > 0) {
+        console.log('🔍 Registros existentes:', allRecordsForMachine.map(r => ({
+          id: r._id,
+          start_time: r.start_time,
+          shift: r.shift,
+          machine_id: r.machine_id
+        })));
+      }
+      
+      existingRecord = await ProductionRecord.findOne(searchQuery);
+      console.log('🔍 Busca por máquina + data (qualquer turno):', existingRecord ? `encontrado - ID: ${existingRecord._id}` : 'não encontrado');
+    }
+    
+    if (existingRecord) {
+      // Atualizar registro existente
+      console.log('🔄 Atualizando registro existente:', existingRecord._id);
+      
+      existingRecord.end_time = end_time ? new Date(end_time) : existingRecord.end_time;
+      existingRecord.good_production = good_production;
+      existingRecord.film_waste = film_waste;
+      existingRecord.organic_waste = organic_waste;
+      existingRecord.planned_time = planned_time;
+      existingRecord.downtime_minutes = downtime_minutes;
+      existingRecord.downtime_reason = downtime_reason || existingRecord.downtime_reason;
+      existingRecord.material_code = material_code || existingRecord.material_code;
+      existingRecord.shift = shift || existingRecord.shift;
+      existingRecord.operator_id = operator_id || existingRecord.operator_id;
+      existingRecord.notes = notes || existingRecord.notes;
+      existingRecord.batch_number = batch_number || existingRecord.batch_number;
+      existingRecord.quality_check = quality_check !== undefined ? Boolean(quality_check) : existingRecord.quality_check;
+      existingRecord.temperature = temperature ? Number(temperature) : existingRecord.temperature;
+      existingRecord.pressure = pressure ? Number(pressure) : existingRecord.pressure;
+      existingRecord.speed = speed ? Number(speed) : existingRecord.speed;
+      
+      await existingRecord.save();
+      
+      // Atualizar entrada no histórico OEE
+      try {
+        await OeeHistory.findOneAndUpdate(
+          { production_record_id: existingRecord._id },
+          {
+            timestamp: existingRecord.start_time,
+            oee: existingRecord.oee_calculated || 0,
+            availability: existingRecord.availability_calculated || 0,
+            performance: existingRecord.performance_calculated || 0,
+            quality: existingRecord.quality_calculated || 0,
+            good_production: existingRecord.good_production,
+            total_waste: (existingRecord.film_waste || 0) + (existingRecord.organic_waste || 0),
+            downtime_minutes: existingRecord.downtime_minutes,
+            planned_time: existingRecord.planned_time,
+            shift: existingRecord.shift,
+            operator_id: existingRecord.operator_id
+          },
+          { upsert: true }
+        );
+        console.log('✅ Histórico OEE atualizado para registro:', existingRecord._id);
+      } catch (historyError) {
+        console.error('⚠️ Erro ao atualizar histórico OEE:', historyError);
+      }
+      
+      console.log(`✅ Registro de produção atualizado para máquina ${machine.name}`);
+      res.json({ ...existingRecord.toObject(), action: 'updated' });
+      
+    } else {
+      // Criar novo registro
+      console.log('➕ Criando novo registro de produção');
+      
+      const newRecord = new ProductionRecord({
+        machine_id,
+        start_time: new Date(start_time),
+        end_time: end_time ? new Date(end_time) : undefined,
+        good_production: Number(good_production),
+        film_waste: Number(film_waste),
+        organic_waste: Number(organic_waste),
+        planned_time: Number(planned_time),
+        downtime_minutes: Number(downtime_minutes),
+        downtime_reason,
+        material_code,
+        shift,
+        operator_id,
+        notes,
+        batch_number,
+        quality_check: quality_check !== undefined ? Boolean(quality_check) : true,
+        temperature: temperature ? Number(temperature) : undefined,
+        pressure: pressure ? Number(pressure) : undefined,
+        speed: speed ? Number(speed) : undefined
+      });
+      
+      await newRecord.save();
+      
+      // Criar entrada no histórico OEE
+      try {
+        const historyEntry = new OeeHistory({
+          machine_id: newRecord.machine_id,
+          production_record_id: newRecord._id,
+          timestamp: newRecord.start_time,
+          oee: newRecord.oee_calculated || 0,
+          availability: newRecord.availability_calculated || 0,
+          performance: newRecord.performance_calculated || 0,
+          quality: newRecord.quality_calculated || 0,
+          good_production: newRecord.good_production,
+          total_waste: (newRecord.film_waste || 0) + (newRecord.organic_waste || 0),
+          downtime_minutes: newRecord.downtime_minutes,
+          planned_time: newRecord.planned_time,
+          shift: newRecord.shift,
+          operator_id: newRecord.operator_id
+        });
+        
+        await historyEntry.save();
+        console.log('✅ Entrada no histórico OEE criada para registro:', newRecord._id);
+      } catch (historyError) {
+        console.error('⚠️ Erro ao criar entrada no histórico OEE:', historyError);
+      }
+      
+      console.log(`✅ Novo registro de produção criado para máquina ${machine.name}`);
+      res.status(201).json({ ...newRecord.toObject(), action: 'created' });
+    }
+    
+  } catch (error) {
+    console.error('❌ Erro no upsert de registro de produção:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Buscar histórico OEE
+app.get('/api/oee-history', async (req, res) => {
+  try {
+    const { machine_id, start_date, end_date, limit = 100, offset = 0 } = req.query;
+    
+    let query = {};
+    
+    if (machine_id) {
+      query.machine_id = machine_id;
+    }
+    
+    if (start_date || end_date) {
+      query.timestamp = {};
+      if (start_date) {
+        query.timestamp.$gte = new Date(start_date);
+      }
+      if (end_date) {
+        query.timestamp.$lte = new Date(end_date);
+      }
+    }
+    
+    const history = await OeeHistory
+      .find(query)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(offset))
+      .populate('machine_id', 'name code')
+      .lean();
+    
+    const total = await OeeHistory.countDocuments(query);
+    
+    res.json({ history, total });
+  } catch (error) {
+    console.error('❌ Erro ao buscar histórico OEE:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Buscar histórico OEE por máquina específica
+app.get('/api/oee-history/:machineId', async (req, res) => {
+  try {
+    const { machineId } = req.params;
+    const { start_date, end_date, limit = 100 } = req.query;
+    
+    let query = { machine_id: machineId };
+    
+    if (start_date || end_date) {
+      query.timestamp = {};
+      if (start_date) {
+        query.timestamp.$gte = new Date(start_date);
+      }
+      if (end_date) {
+        query.timestamp.$lte = new Date(end_date);
+      }
+    }
+    
+    const history = await OeeHistory
+      .find(query)
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .lean();
+    
+    res.json(history);
+  } catch (error) {
+    console.error('❌ Erro ao buscar histórico OEE da máquina:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Buscar estatísticas de produção
 app.get('/api/production-statistics', async (req, res) => {
   try {
     const { machine_id, start_date, end_date, shift } = req.query;
@@ -1248,6 +2063,9 @@ app.listen(PORT, () => {
   console.log(`📋 Endpoints disponíveis:`);
   console.log(`   GET  /api/health - Health check`);
   console.log(`   POST /api/users - Criar usuário`);
+  console.log(`   POST /api/users/:id/change-password - Alterar senha`);
+  console.log(`   PUT  /api/users/:id/change-password - Alterar senha (alternativo)`);
+  console.log(`   POST /api/change-password-working - Alterar senha (FUNCIONAL)`);
   console.log(`   POST /api/auth/login - Login`);
   console.log(`   POST /api/auth/verify - Verificar token`);
   console.log(`   POST /api/init/users - Inicializar usuários padrão`);
@@ -1260,8 +2078,11 @@ app.listen(PORT, () => {
   console.log(`   GET  /api/production-records - Listar registros de produção`);
   console.log(`   GET  /api/production-records/:id - Buscar registro por ID`);
   console.log(`   POST /api/production-records - Criar registro de produção`);
+  console.log(`   POST /api/production-records/upsert - Criar ou atualizar registro (anti-duplicação)`);
   console.log(`   PUT  /api/production-records/:id - Atualizar registro`);
   console.log(`   DELETE /api/production-records/:id - Deletar registro`);
   console.log(`   GET  /api/production-statistics - Estatísticas de produção`);
+  console.log(`   GET  /api/oee-history - Buscar histórico OEE`);
+  console.log(`   GET  /api/oee-history/:machineId - Buscar histórico OEE por máquina`);
   console.log(`   POST /api/init/production-records - Inicializar registros padrão`);
 });

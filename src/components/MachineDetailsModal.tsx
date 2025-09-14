@@ -786,35 +786,64 @@ export function MachineDetailsModal({ machine, isOpen, onClose }: MachineDetails
               </CardContent>
             </Card>
 
-            {/* Benefícios Esperados */}
-            <Card className="hover-lift border-success/30 shadow-lg shadow-success/10">
-              <CardHeader className="bg-success/5">
-                <CardTitle className="flex items-center gap-3 text-xl">
-                  <div className="p-3 rounded-xl bg-success text-success-foreground animate-bounce-subtle">
-                    <CheckCircle2 className="h-6 w-6" />
+            {/* Benefícios Esperados - Design Aprimorado */}
+            <Card className="hover-lift border-0 shadow-xl overflow-hidden bg-gradient-to-br from-emerald-50 via-green-50 to-teal-50 dark:from-emerald-950/20 dark:via-green-950/20 dark:to-teal-950/20">
+              <CardHeader className="bg-gradient-to-r from-emerald-500 to-green-600 text-white relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-green-500/20 animate-pulse"></div>
+                <CardTitle className="flex items-center gap-4 text-xl relative z-10">
+                  <div className="p-3 rounded-xl bg-white/20 backdrop-blur-sm border border-white/30 animate-bounce-subtle">
+                    <CheckCircle2 className="h-7 w-7 text-white drop-shadow-lg" />
                   </div>
                   <div>
-                    <div className="font-semibold text-primary">Benefícios Esperados</div>
-                    <div className="text-base font-normal text-muted-foreground">
-                      Com a implementação das ações
+                    <div className="font-bold text-white text-2xl drop-shadow-md">Benefícios Esperados</div>
+                    <div className="text-emerald-100 font-medium mt-1 drop-shadow-sm">
+                      Com a implementação das ações recomendadas
                     </div>
                   </div>
                 </CardTitle>
+                {/* Decorative elements */}
+                <div className="absolute -top-4 -right-4 w-24 h-24 bg-white/10 rounded-full blur-xl"></div>
+                <div className="absolute -bottom-2 -left-2 w-16 h-16 bg-emerald-300/20 rounded-full blur-lg"></div>
               </CardHeader>
-              <CardContent className="p-6">
-                <div className="space-y-4">
+              <CardContent className="p-8 bg-gradient-to-b from-white to-emerald-50/30 dark:from-gray-800 dark:to-emerald-950/10">
+                <div className="space-y-5">
                   {analysisData.expectedBenefits.map((benefit, index) => (
                     <div 
                       key={index} 
-                      className="flex items-start gap-4 p-4 bg-success/5 rounded-lg hover-lift animate-fade-in"
-                      style={{ animationDelay: `${index * 100}ms` }}
+                      className="group flex items-start gap-4 p-5 bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-950/30 dark:to-green-950/30 rounded-xl border border-emerald-200/50 dark:border-emerald-800/30 hover:shadow-lg hover:shadow-emerald-500/10 transition-all duration-300 hover:-translate-y-1 animate-fade-in"
+                      style={{ animationDelay: `${index * 150}ms` }}
                     >
-                      <div className="p-2 rounded-lg bg-success/10">
-                        <CheckCircle2 className="h-4 w-4 text-success" />
+                      <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 shadow-lg group-hover:shadow-emerald-500/25 transition-all duration-300 group-hover:scale-110">
+                        <CheckCircle2 className="h-5 w-5 text-white" />
                       </div>
-                      <span className="text-sm font-medium flex-1">{benefit}</span>
+                      <div className="flex-1">
+                        <span className="text-base font-semibold text-gray-800 dark:text-gray-200 group-hover:text-emerald-700 dark:group-hover:text-emerald-300 transition-colors duration-300">
+                          {benefit}
+                        </span>
+                        <div className="mt-2 h-1 bg-gradient-to-r from-emerald-500 to-green-600 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform scale-x-0 group-hover:scale-x-100 origin-left"></div>
+                      </div>
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                        <ArrowRight className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                      </div>
                     </div>
                   ))}
+                </div>
+                
+                {/* Summary footer */}
+                <div className="mt-8 p-4 bg-gradient-to-r from-emerald-100 to-green-100 dark:from-emerald-900/20 dark:to-green-900/20 rounded-xl border border-emerald-200/50 dark:border-emerald-800/30">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-emerald-500 text-white">
+                      <Award className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">
+                        Impacto Esperado: Melhoria significativa na eficiência operacional
+                      </p>
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-1">
+                        Implementação recomendada em até 30 dias para máximos resultados
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

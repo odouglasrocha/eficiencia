@@ -177,8 +177,8 @@ class UserProfileAPI {
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<boolean> {
     try {
       console.log('🔄 Alterando senha via API...');
-      await this.makeRequest(`/profile/${userId}/password`, {
-        method: 'PUT',
+      await this.makeRequest(`/users/${userId}/change-password`, {
+        method: 'POST',
         body: JSON.stringify({ currentPassword, newPassword })
       });
       console.log('✅ Senha alterada via API');

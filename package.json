@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "init-users": "tsx src/scripts/initializeUsers.ts",
     "init-production": "tsx src/scripts/initializeProduction.ts",
+    "server": "node server-funcional.cjs",
     "init-all": "npm run init-users init && npm run init-production"
   },
   "dependencies": {

@@ -150,7 +150,7 @@ class UserProfileServiceHybrid {
       console.error('❌ Erro na verificação do token:', error);
       
       // Se falhou com MongoDB, tentar com browser service
-      if (service === this.mongoService && this.browserService) {
+      if (service === this.apiService && this.browserService) {
         console.log('🔄 Tentando fallback para browser service...');
         const result = await this.browserService.verifyToken(token);
         return result;

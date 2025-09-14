@@ -428,20 +428,36 @@ class UserProfileServiceBrowser {
   }
 
   async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<boolean> {
+    console.log('🔄 Iniciando alteração de senha no localStorage...');
+    
     const users = this.safeLocalStorage.getJSON('users', []);
     const userIndex = users.findIndex((u: any) => u._id === userId);
 
     if (userIndex === -1) {
+      console.error('❌ Usuário não encontrado:', userId);
       throw new Error('Usuário não encontrado');
     }
 
     const user = users[userIndex];
+    console.log('🔍 Usuário encontrado:', user.email);
 
-    // Verificar senha atual
-    const isValidPassword = this.verifySimpleHash(currentPassword, user.password);
+    // Verificar senha atual - aceitar tanto hash quanto texto simples para compatibilidade
+    let isValidPassword = false;
+    
+    // Tentar verificar como hash primeiro
+    try {
+      isValidPassword = this.verifySimpleHash(currentPassword, user.password);
+    } catch (e) {
+      // Se falhar, tentar comparação direta (para senhas em texto simples)
+      isValidPassword = currentPassword === user.password;
+    }
+    
     if (!isValidPassword) {
+      console.error('❌ Senha atual incorreta para usuário:', user.email);
       throw new Error('Senha atual incorreta');
     }
+
+    console.log('✅ Senha atual verificada com sucesso');
 
     // Hash da nova senha
     const hashedPassword = this.simpleHash(newPassword);
@@ -453,6 +469,7 @@ class UserProfileServiceBrowser {
     this.safeLocalStorage.setJSON('users', users);
 
     console.log('✅ Senha alterada no localStorage:', userId);
+    console.log('🔐 Nova senha hasheada e salva com sucesso');
     return true;
   }
 

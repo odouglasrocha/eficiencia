@@ -151,13 +151,23 @@ ProductionRecordSchema.pre('save', function(next) {
 ProductionRecordSchema.methods.calculateOEE = function(targetProduction: number = 1) {
   const actualRuntime = this.planned_time - this.downtime_minutes;
   const availability = this.planned_time > 0 ? (actualRuntime / this.planned_time) * 100 : 0;
-  const performance = targetProduction > 0 ? (this.good_production / targetProduction) * 100 : 0;
-  const quality = 100; // Assumido como 100% por padrão
+  
+  // Usar a mesma lógica de Performance dos serviços para consistência
+  let performance = 0;
+  if (targetProduction > 0 && actualRuntime > 0) {
+    const expectedProduction = (targetProduction * actualRuntime) / this.planned_time;
+    performance = Math.min((this.good_production / expectedProduction) * 100, 100);
+  }
+  
+  // Calcular qualidade baseada na produção boa vs total produzido
+  const totalProduction = this.good_production + this.film_waste + this.organic_waste;
+  const quality = totalProduction > 0 ? (this.good_production / totalProduction) * 100 : 100;
+  
   const oee = (availability * performance * quality) / 10000;
   
   this.availability_calculated = Math.max(0, Math.min(100, availability));
   this.performance_calculated = Math.max(0, Math.min(100, performance));
-  this.quality_calculated = quality;
+  this.quality_calculated = Math.max(0, Math.min(100, quality));
   this.oee_calculated = Math.max(0, Math.min(100, oee));
   
   return {

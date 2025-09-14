@@ -102,9 +102,42 @@ export function MachineCard({
             <CardTitle className="text-lg font-semibold">{name}</CardTitle>
             <div className="flex items-center gap-2 mt-1">
               <p className="text-sm text-muted-foreground">Código: {code}</p>
-              {/* Turno atual baseado no horário */}
+              {/* Turno baseado no último registro de produção */}
               {(() => {
-                const currentShift = getShiftFromDateTime(new Date());
+                // Mapear turnos A, B, C para Manhã, Tarde, Noite
+                 // Também aceitar valores diretos como "Tarde", "Manhã", "Noite"
+                 const shiftMapping = {
+                   'A': 'Manhã' as const,
+                   'B': 'Tarde' as const, 
+                   'C': 'Noite' as const,
+                   'Manhã': 'Manhã' as const,
+                   'Tarde': 'Tarde' as const,
+                   'Noite': 'Noite' as const
+                 };
+                
+                // Relacionamento: test.machines.code relaciona com test.productionrecords.machine_id
+                 // Buscar dados da máquina primeiro
+                 const machines = JSON.parse(localStorage.getItem('machines') || '[]');
+                 const machine = machines.find((m: any) => m._id === id || m.code === id);
+                 const machineCode = machine?.code; // EA01, EA02, etc.
+                 
+                 // Buscar registros de produção usando machine_id = machines.code
+                 const productionRecords = JSON.parse(localStorage.getItem('productionRecords') || '[]');
+                 const machineRecords = productionRecords.filter((r: any) => r.machine_id === machineCode);
+                 const lastRecord = machineRecords.sort((a: any, b: any) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime())[0];
+                 
+                 // Usar turno do último registro test.productionrecords.shift
+                 let recordShift = lastRecord?.shift; // Campo shift da tabela test.productionrecords
+                 
+                 // Se não há registro, usar propriedade shift da máquina criada
+                 if (!recordShift) {
+                   recordShift = machine?.shift || 'Manhã'; // Usar propriedade shift da máquina
+                 }
+                 
+                 const currentShift = recordShift && shiftMapping[recordShift as keyof typeof shiftMapping] 
+                   ? shiftMapping[recordShift as keyof typeof shiftMapping]
+                   : getShiftFromDateTime(new Date());
+                  
                 const shiftInfo = getShiftInfo(currentShift);
                 return (
                   <Badge 

@@ -248,6 +248,69 @@ class ProductionRecordService {
     }
   }
 
+  // Upsert (criar ou atualizar) registro de produção
+  async upsertProductionRecord(data: {
+    machineId: string;
+    materialCode?: string;
+    startTime: string;
+    endTime?: string;
+    plannedTime: number;
+    goodProduction: number;
+    filmWaste: number;
+    organicWaste: number;
+    downtimeEvents?: Array<{
+      reason: string;
+      duration: number;
+      description: string;
+    }>;
+    shift?: string;
+    operatorId?: string;
+    notes?: string;
+    batchNumber?: string;
+    qualityCheck?: boolean;
+    temperature?: number;
+    pressure?: number;
+    speed?: number;
+  }): Promise<ProductionRecord & { action: 'created' | 'updated' }> {
+    try {
+      console.log('🔄 Upsert de registro de produção:', data);
+      
+      // Calcular downtime total dos eventos
+      const totalDowntime = data.downtimeEvents?.reduce((total, event) => total + event.duration, 0) || 0;
+      const downtimeReason = data.downtimeEvents?.map(event => `${event.reason}: ${event.description}`).join('; ') || '';
+      
+      const response = await this.fetchWithAuth('/production-records/upsert', {
+        method: 'POST',
+        body: JSON.stringify({
+          machine_id: data.machineId,
+          start_time: data.startTime,
+          end_time: data.endTime,
+          good_production: data.goodProduction,
+          film_waste: data.filmWaste,
+          organic_waste: data.organicWaste,
+          planned_time: data.plannedTime,
+          downtime_minutes: totalDowntime,
+          downtime_reason: downtimeReason,
+          material_code: data.materialCode,
+          shift: data.shift,
+          operator_id: data.operatorId,
+          notes: data.notes,
+          batch_number: data.batchNumber,
+          quality_check: data.qualityCheck,
+          temperature: data.temperature,
+          pressure: data.pressure,
+          speed: data.speed
+        })
+      });
+      
+      console.log('✅ Upsert de registro de produção realizado:', response.action);
+      return response;
+    } catch (error) {
+      console.error('❌ Erro no upsert de registro de produção:', error);
+      throw error;
+    }
+  }
+
   // Obter estatísticas de produção
   async getProductionStatistics(filters?: {
     machine_id?: string;

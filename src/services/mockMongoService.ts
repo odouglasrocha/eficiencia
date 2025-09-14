@@ -156,10 +156,33 @@ class MockMongoService {
     records.push(record);
     localStorage.setItem('productionRecords', JSON.stringify(records));
     
+    // Calcular métricas OEE para este registro
+    const oeeMetrics = this.calculateOeeMetrics(
+      data.goodProduction,
+      data.plannedTime,
+      data.downtimeMinutes,
+      1000 // target padrão, será recalculado na updateMachineMetrics
+    );
+    
+    // Criar entrada no histórico OEE
+    await this.createOeeHistoryEntry(data.machineId, data, oeeMetrics);
+    
     // Atualizar métricas da máquina
     await this.updateMachineMetrics(data.machineId);
     
+    // Disparar evento para atualização automática da interface
+    this.triggerMachineDataUpdate(data.machineId);
+    
     return record;
+  }
+
+  // Método para disparar atualização automática da interface
+  private triggerMachineDataUpdate(machineId: string) {
+    // Disparar evento customizado para atualizar a interface imediatamente
+    const event = new CustomEvent('machineDataUpdated', {
+      detail: { machineId }
+    });
+    window.dispatchEvent(event);
   }
 
   // Atualizar registro de produção existente
@@ -288,18 +311,27 @@ class MockMongoService {
       startDate: yesterday.toISOString()
     });
     
-    if (recentRecords.length === 0) return;
+    let totalGoodProduction = 0;
+    let totalPlannedTime = 0;
+    let totalDowntime = 0;
     
-    // Calcular métricas agregadas
-    const totalGoodProduction = recentRecords.reduce((sum: number, r: any) => sum + r.good_production, 0);
-    const totalPlannedTime = recentRecords.reduce((sum: number, r: any) => sum + r.planned_time, 0);
-    const totalDowntime = recentRecords.reduce((sum: number, r: any) => sum + r.downtime_minutes, 0);
+    if (recentRecords.length > 0) {
+      // Calcular métricas agregadas dos registros
+      totalGoodProduction = recentRecords.reduce((sum: number, r: any) => sum + r.good_production, 0);
+      totalPlannedTime = recentRecords.reduce((sum: number, r: any) => sum + r.planned_time, 0);
+      totalDowntime = recentRecords.reduce((sum: number, r: any) => sum + r.downtime_minutes, 0);
+    } else {
+      // Se não há registros, usar valores padrão baseados na capacidade da máquina
+      totalGoodProduction = machine.current_production || Math.floor((machine.target_production || 1000) * 0.85);
+      totalPlannedTime = 480; // 8 horas padrão
+      totalDowntime = 30; // 30 minutos padrão
+    }
     
     const oeeMetrics = this.calculateOeeMetrics(
       totalGoodProduction,
       totalPlannedTime,
       totalDowntime,
-      machine.target_production || 1
+      machine.target_production || 1000
     );
     
     await this.updateMachine(machineId, {
@@ -370,27 +402,77 @@ class MockMongoService {
 
   // ===== FUNÇÕES DE HISTÓRICO OEE =====
   async getOeeHistory(machineId: string, startDate?: Date, endDate?: Date) {
-    // Simular dados de histórico
-    const history = [];
-    const now = new Date();
+    const oeeHistory = JSON.parse(localStorage.getItem('oeeHistory') || '[]');
     
-    for (let i = 30; i >= 0; i--) {
-      const date = new Date(now);
-      date.setDate(date.getDate() - i);
-      
-      history.push({
-        _id: uuidv4(),
-        machine_id: machineId,
-        timestamp: date.toISOString(),
-        oee: Math.random() * 40 + 60, // 60-100%
-        availability: Math.random() * 20 + 80, // 80-100%
-        performance: Math.random() * 30 + 70, // 70-100%
-        quality: Math.random() * 10 + 90, // 90-100%
-        created_at: date.toISOString()
+    let filteredHistory = oeeHistory.filter((entry: any) => entry.machine_id === machineId);
+    
+    // Filtrar por data se fornecida
+    if (startDate || endDate) {
+      filteredHistory = filteredHistory.filter((entry: any) => {
+        const entryDate = new Date(entry.timestamp);
+        if (startDate && entryDate < startDate) return false;
+        if (endDate && entryDate > endDate) return false;
+        return true;
       });
     }
     
-    return history;
+    // Se não há dados, criar entrada para hoje com dados da máquina
+    if (filteredHistory.length === 0) {
+      const machine = await this.getMachineById(machineId);
+      if (machine) {
+        const todayEntry = {
+          _id: uuidv4(),
+          machine_id: machineId,
+          timestamp: new Date().toISOString(),
+          oee: machine.oee || 0,
+          availability: machine.availability || 0,
+          performance: machine.performance || 0,
+          quality: machine.quality || 100,
+          good_production: machine.current_production || 0,
+          total_waste: 0,
+          downtime_minutes: 0,
+          planned_time: 480, // 8 horas padrão
+          created_at: new Date().toISOString()
+        };
+        
+        // Salvar no localStorage
+        oeeHistory.push(todayEntry);
+        localStorage.setItem('oeeHistory', JSON.stringify(oeeHistory));
+        
+        return [todayEntry];
+      }
+    }
+    
+    return filteredHistory.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+  
+  // Criar entrada no histórico OEE
+  async createOeeHistoryEntry(machineId: string, productionData: any, oeeMetrics: OeeMetrics) {
+    const oeeHistory = JSON.parse(localStorage.getItem('oeeHistory') || '[]');
+    
+    const historyEntry = {
+      _id: uuidv4(),
+      machine_id: machineId,
+      production_record_id: productionData.recordId || uuidv4(),
+      timestamp: new Date().toISOString(),
+      oee: oeeMetrics.oee,
+      availability: oeeMetrics.availability,
+      performance: oeeMetrics.performance,
+      quality: oeeMetrics.quality,
+      good_production: productionData.goodProduction || 0,
+      total_waste: (productionData.filmWaste || 0) + (productionData.organicWaste || 0),
+      downtime_minutes: productionData.downtimeMinutes || 0,
+      planned_time: productionData.plannedTime || 0,
+      shift: productionData.shift,
+      operator_id: productionData.operatorId,
+      created_at: new Date().toISOString()
+    };
+    
+    oeeHistory.push(historyEntry);
+    localStorage.setItem('oeeHistory', JSON.stringify(oeeHistory));
+    
+    console.log(`✅ Entrada no histórico OEE criada para máquina ${machineId}`);
+    return historyEntry;
   }
 
   // ===== FUNÇÕES DE EVENTOS DE PARADA =====
@@ -627,6 +709,13 @@ class MockMongoService {
 
   // ===== FUNÇÕES DE INICIALIZAÇÃO =====
   async initializeDefaultData() {
+    console.log('🔄 Inicializando dados padrão...');
+    
+    // Limpar dados antigos para garantir turnos corretos
+    localStorage.removeItem('machines');
+    localStorage.removeItem('productionRecords');
+    console.log('🧹 Dados antigos limpos para reinicialização');
+    
     // Criar usuário administrador padrão se não existir
     const users = JSON.parse(localStorage.getItem('users') || '[]');
     const adminExists = users.some((u: any) => u.email === 'admin@sistema-oee.com');
@@ -744,10 +833,99 @@ class MockMongoService {
           access_level: AppRole.OPERADOR,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
+        },
+        {
+          _id: 'EA01',
+          name: 'Extrusora EA01',
+          code: 'EA01',
+          status: MachineStatus.ATIVA,
+          oee: 79.1,
+          availability: 86.0,
+          performance: 92.0,
+          quality: 100.0,
+          current_production: 27000,
+          target_production: 31238,
+          capacity: 5000,
+          shift: 'Manhã', // Propriedade específica da máquina
+          permissions: ['view', 'operate'],
+          access_level: AppRole.OPERADOR,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        {
+          _id: 'EA02',
+          name: 'Extrusora EA02',
+          code: 'EA02',
+          status: MachineStatus.ATIVA,
+          oee: 81.0,
+          availability: 88.0,
+          performance: 92.0,
+          quality: 100.0,
+          current_production: 10500,
+          target_production: 27459,
+          capacity: 4500,
+          shift: 'Tarde', // Propriedade específica da máquina
+          permissions: ['view', 'operate'],
+          access_level: AppRole.OPERADOR,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         }
       ];
       
       localStorage.setItem('machines', JSON.stringify(sampleMachines));
+      
+      // Criar registros de produção para EA01 e EA02
+      const productionRecords = JSON.parse(localStorage.getItem('productionRecords') || '[]');
+      if (productionRecords.length === 0) {
+        const sampleRecords = [
+          {
+            _id: uuidv4(),
+            machine_id: 'EA01', // Relacionamento: test.machines.code = test.productionrecords.machine_id
+            start_time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+            end_time: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+            good_production: 1200,
+            film_waste: 25,
+            organic_waste: 15.5,
+            planned_time: 120,
+            downtime_minutes: 10,
+            downtime_reason: 'Troca de material',
+            material_code: 'MAT001',
+            shift: 'Manhã', // Campo shift que deve ser exibido no Turno
+            operator_id: 'op_001',
+            batch_number: 'BATCH_EA01_001',
+            quality_check: true,
+            temperature: 185.2,
+            pressure: 12.5,
+            speed: 95.8,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          },
+          {
+            _id: uuidv4(),
+            machine_id: 'EA02', // Relacionamento: test.machines.code = test.productionrecords.machine_id
+            start_time: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+            end_time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+            good_production: 800,
+            film_waste: 20,
+            organic_waste: 12.3,
+            planned_time: 120,
+            downtime_minutes: 15,
+            downtime_reason: 'Manutenção preventiva',
+            material_code: 'MAT002',
+            shift: 'Tarde', // Campo shift que deve ser exibido no Turno
+            operator_id: 'op_002',
+            batch_number: 'BATCH_EA02_001',
+            quality_check: true,
+            temperature: 190.1,
+            pressure: 11.8,
+            speed: 88.5,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+        ];
+        
+        localStorage.setItem('productionRecords', JSON.stringify(sampleRecords));
+      }
     }
     
     console.log('✅ Dados padrão inicializados no localStorage');

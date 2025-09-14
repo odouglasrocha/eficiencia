@@ -1,6 +1,170 @@
-// Utilitário para gerenciamento de turnos
-export type ShiftType = 'Manhã' | 'Tarde' | 'Noite';
+// Utilitários para cálculo de turnos baseado em horários de produção
 
+export interface ShiftConfig {
+  name: string;
+  start: string; // HH:MM format
+  end: string;   // HH:MM format
+  color: string;
+  icon: string;
+}
+
+export const SHIFTS: ShiftConfig[] = [
+  { 
+    name: 'Manhã', 
+    start: '05:40', 
+    end: '13:50',
+    color: 'bg-blue-100 text-blue-800 border-blue-300',
+    icon: '🌅'
+  },
+  { 
+    name: 'Tarde', 
+    start: '13:50', 
+    end: '22:08',
+    color: 'bg-orange-100 text-orange-800 border-orange-300',
+    icon: '☀️'
+  },
+  { 
+    name: 'Noite', 
+    start: '22:08', 
+    end: '05:40', // Turno noturno cruza meia-noite
+    color: 'bg-purple-100 text-purple-800 border-purple-300',
+    icon: '🌙'
+  }
+];
+
+/**
+ * Converte string HH:MM para minutos desde meia-noite
+ */
+function timeToMinutes(timeStr: string): number {
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+/**
+ * Converte Date para minutos desde meia-noite
+ */
+function dateToMinutes(date: Date): number {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+/**
+ * Determina o turno baseado em um horário específico
+ */
+export function getShiftByTime(time: Date): string {
+  const timeMinutes = dateToMinutes(time);
+  
+  for (const shift of SHIFTS) {
+    const startMinutes = timeToMinutes(shift.start);
+    const endMinutes = timeToMinutes(shift.end);
+    
+    // Turno normal (não cruza meia-noite)
+    if (startMinutes < endMinutes) {
+      if (timeMinutes >= startMinutes && timeMinutes < endMinutes) {
+        return shift.name;
+      }
+    }
+    // Turno noturno (cruza meia-noite)
+    else {
+      if (timeMinutes >= startMinutes || timeMinutes < endMinutes) {
+        return shift.name;
+      }
+    }
+  }
+  
+  // Fallback - não deveria acontecer com os horários definidos
+  return 'Indefinido';
+}
+
+/**
+ * Determina o turno baseado no período entre dataHoraInicio e dataHoraFinal
+ * Prioriza o turno onde a maior parte da produção ocorreu
+ */
+export function getShiftByProductionPeriod(startTime: Date, endTime: Date): string {
+  // Se a produção começou e terminou no mesmo turno, retorna esse turno
+  const startShift = getShiftByTime(startTime);
+  const endShift = getShiftByTime(endTime);
+  
+  if (startShift === endShift) {
+    return startShift;
+  }
+  
+  // Se cruzou turnos, calcula qual turno teve maior duração
+  const totalDuration = endTime.getTime() - startTime.getTime();
+  let maxDuration = 0;
+  let dominantShift = startShift;
+  
+  for (const shift of SHIFTS) {
+    const shiftStart = timeToMinutes(shift.start);
+    const shiftEnd = timeToMinutes(shift.end);
+    
+    // Calcula interseção entre período de produção e turno
+    const intersectionDuration = calculateIntersectionDuration(
+      startTime, endTime, shift
+    );
+    
+    if (intersectionDuration > maxDuration) {
+      maxDuration = intersectionDuration;
+      dominantShift = shift.name;
+    }
+  }
+  
+  return dominantShift;
+}
+
+/**
+ * Calcula a duração da interseção entre um período e um turno
+ */
+function calculateIntersectionDuration(
+  periodStart: Date,
+  periodEnd: Date,
+  shift: ShiftConfig
+): number {
+  // Implementação simplificada - usa o turno do horário de início
+  // Para uma implementação mais precisa, seria necessário calcular
+  // a sobreposição exata considerando que turnos podem cruzar dias
+  const startShift = getShiftByTime(periodStart);
+  return startShift === shift.name ? 1 : 0;
+}
+
+/**
+ * Obtém o turno atual baseado no horário atual
+ */
+export function getCurrentShift(): string {
+  return getShiftByTime(new Date());
+}
+
+/**
+ * Formata o nome do turno para exibição
+ */
+export function formatShiftDisplay(shiftName: string): string {
+  const shift = SHIFTS.find(s => s.name === shiftName);
+  return shift ? `${shift.icon} ${shift.name}` : shiftName;
+}
+
+/**
+ * Obtém informações completas do turno
+ */
+export function getShiftInfo(shiftName: string): ShiftConfig | null {
+  return SHIFTS.find(shift => shift.name === shiftName) || null;
+}
+
+/**
+ * Valida se um horário está dentro de um turno específico
+ */
+export function isTimeInShift(time: Date, shiftName: string): boolean {
+  return getShiftByTime(time) === shiftName;
+}
+
+/**
+ * Obtém a cor do turno
+ */
+export function getShiftColor(shiftName: string): string {
+  const shift = SHIFTS.find(s => s.name === shiftName);
+  return shift ? shift.color : 'bg-gray-100 text-gray-800 border-gray-300';
+}
+
+// Manter compatibilidade com código existente
+export type ShiftType = 'Manhã' | 'Tarde' | 'Noite';
 export interface ShiftInfo {
   name: ShiftType;
   startTime: string;
@@ -9,94 +173,11 @@ export interface ShiftInfo {
   icon: string;
 }
 
-// Definição dos turnos
-export const SHIFTS: Record<ShiftType, ShiftInfo> = {
-  'Manhã': {
-    name: 'Manhã',
-    startTime: '05:40',
-    endTime: '13:50',
-    color: 'bg-blue-100 text-blue-800 border-blue-300',
-    icon: '🌅'
-  },
-  'Tarde': {
-    name: 'Tarde', 
-    startTime: '13:50',
-    endTime: '22:08',
-    color: 'bg-orange-100 text-orange-800 border-orange-300',
-    icon: '☀️'
-  },
-  'Noite': {
-    name: 'Noite',
-    startTime: '22:08', 
-    endTime: '05:40',
-    color: 'bg-purple-100 text-purple-800 border-purple-300',
-    icon: '🌙'
-  }
-};
-
 /**
- * Determina o turno baseado na data/hora fornecida
- * @param dateTime - Data e hora no formato ISO string ou Date object
- * @returns O turno correspondente
+ * Determina o turno baseado na data/hora fornecida (compatibilidade)
  */
 export function getShiftFromDateTime(dateTime: string | Date): ShiftType {
   const date = typeof dateTime === 'string' ? new Date(dateTime) : dateTime;
-  
-  // Obter horário do Brasil usando Intl API mais confiável
-  const brasilTime = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }).formatToParts(date);
-  
-  const hours = parseInt(brasilTime.find(part => part.type === 'hour')?.value || '0');
-  const minutes = parseInt(brasilTime.find(part => part.type === 'minute')?.value || '0');
-  
-  // Converter para minutos desde meia-noite para facilitar comparação
-  const totalMinutes = hours * 60 + minutes;
-  
-  // Turno Manhã: 05:40 às 13:50 (340 min a 830 min)
-  const morningStart = 5 * 60 + 40; // 340 min
-  const morningEnd = 13 * 60 + 50;   // 830 min
-  
-  // Turno Tarde: 13:50 às 22:08 (830 min a 1328 min)  
-  const afternoonStart = 13 * 60 + 50; // 830 min
-  const afternoonEnd = 22 * 60 + 8;    // 1328 min
-  
-  // Turno Noite: 22:08 às 05:40 (cruza meia-noite)
-  const nightStart = 22 * 60 + 8; // 1328 min
-  const nightEnd = 5 * 60 + 40;   // 340 min (próximo dia)
-  
-  let shift: ShiftType;
-  
-  if (totalMinutes >= morningStart && totalMinutes < afternoonStart) {
-    shift = 'Manhã';
-  } else if (totalMinutes >= afternoonStart && totalMinutes < nightStart) {
-    shift = 'Tarde';
-  } else {
-    // Turno noite: 22:08 às 05:40 do dia seguinte (inclui tudo antes de 05:40 e depois de 22:08)
-    shift = 'Noite';
-  }
-  
-  return shift;
-}
-
-/**
- * Formata o turno para exibição com ícone e nome
- */
-export function formatShiftDisplay(shift: ShiftType): string {
-  const shiftInfo = SHIFTS[shift];
-  return `${shiftInfo.icon} ${shiftInfo.name}`;
-}
-
-/**
- * Obtém as informações completas do turno
- */
-export function getShiftInfo(shift: ShiftType): ShiftInfo {
-  return SHIFTS[shift];
+  const shiftName = getShiftByTime(date);
+  return shiftName as ShiftType;
 }
