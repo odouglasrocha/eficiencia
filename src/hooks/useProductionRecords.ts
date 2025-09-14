@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { materialsData } from '@/data/materialsData';
 import productionService from '@/services/productionService';
+import productionRecordService from '@/services/productionRecordService';
 import { ProductionRecordData as ServiceProductionRecordData } from '@/services/mongoService';
 import { IProductionRecord } from '@/models';
 
@@ -83,38 +84,66 @@ export function useProductionRecords() {
         }
       }
       
-      // Calcular total de tempo de parada
-      const totalDowntimeMinutes = data.downtimeEvents.reduce(
-        (total, event) => total + event.duration, 
-        0
-      );
-
       // Converter organicWaste para número
       const organicWasteNumber = parseFloat(data.organicWaste.replace(',', '.'));
 
-      // Preparar dados para o serviço
-      const serviceData: ServiceProductionRecordData = {
-        machineId: data.machineId,
-        startTime: data.startTime,
-        endTime: data.endTime,
-        goodProduction: data.goodProduction,
-        filmWaste: data.filmWaste,
-        organicWaste: organicWasteNumber,
-        plannedTime: data.plannedTime,
-        downtimeMinutes: totalDowntimeMinutes,
-        downtimeReason: data.downtimeEvents.map(e => e.reason).join(', ') || undefined,
-        materialCode: data.materialCode,
-        shift: data.shift,
-        operatorId: data.operatorId,
-        notes: data.notes,
-        batchNumber: data.batchNumber,
-        qualityCheck: data.qualityCheck,
-        temperature: data.temperature,
-        pressure: data.pressure,
-        speed: data.speed
-      };
+      // Tentar usar API real primeiro
+      const isApiAvailable = await productionRecordService.isApiAvailable();
+      
+      let result;
+      if (isApiAvailable) {
+        console.log('✅ Usando API MongoDB real para criar registro de produção');
+        result = await productionRecordService.createProductionRecord({
+          machineId: data.machineId,
+          materialCode: data.materialCode,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          plannedTime: data.plannedTime,
+          goodProduction: data.goodProduction,
+          filmWaste: data.filmWaste,
+          organicWaste: organicWasteNumber,
+          downtimeEvents: data.downtimeEvents,
+          shift: data.shift,
+          operatorId: data.operatorId,
+          notes: data.notes,
+          batchNumber: data.batchNumber,
+          qualityCheck: data.qualityCheck,
+          temperature: data.temperature,
+          pressure: data.pressure,
+          speed: data.speed
+        });
+      } else {
+        console.log('ℹ️ Usando productionService para criar registro de produção');
+        // Calcular total de tempo de parada
+        const totalDowntimeMinutes = data.downtimeEvents.reduce(
+          (total, event) => total + event.duration, 
+          0
+        );
 
-      const result = await productionService.createProductionRecord(serviceData);
+        // Preparar dados para o serviço
+        const serviceData: ServiceProductionRecordData = {
+          machineId: data.machineId,
+          startTime: data.startTime,
+          endTime: data.endTime,
+          goodProduction: data.goodProduction,
+          filmWaste: data.filmWaste,
+          organicWaste: organicWasteNumber,
+          plannedTime: data.plannedTime,
+          downtimeMinutes: totalDowntimeMinutes,
+          downtimeReason: data.downtimeEvents.map(e => e.reason).join(', ') || undefined,
+          materialCode: data.materialCode,
+          shift: data.shift,
+          operatorId: data.operatorId,
+          notes: data.notes,
+          batchNumber: data.batchNumber,
+          qualityCheck: data.qualityCheck,
+          temperature: data.temperature,
+          pressure: data.pressure,
+          speed: data.speed
+        };
+
+        result = await productionService.createProductionRecord(serviceData);
+      }
 
       // Criar eventos de parada individuais
       if (data.downtimeEvents.length > 0) {
@@ -201,7 +230,57 @@ export function useProductionRecords() {
   const loadProductionRecords = async (filters?: ProductionFilters) => {
     try {
       setLoading(true);
-      const result = await productionService.getProductionRecords(filters);
+      
+      // Tentar usar API real primeiro
+      const isApiAvailable = await productionRecordService.isApiAvailable();
+      
+      let result;
+      if (isApiAvailable) {
+        console.log('✅ Usando API MongoDB real para buscar registros de produção');
+        const response = await productionRecordService.getProductionRecords({
+          machine_id: filters?.machineId,
+          start_date: filters?.startDate,
+          end_date: filters?.endDate,
+          shift: filters?.shift,
+          operator_id: filters?.operatorId,
+          material_code: filters?.materialCode,
+          limit: filters?.limit,
+          offset: filters?.offset
+        });
+        
+        // Converter formato MongoDB para formato do frontend
+        result = response.records.map(record => ({
+          _id: record._id,
+          machine_id: record.machine_id,
+          start_time: record.start_time,
+          end_time: record.end_time,
+          good_production: record.good_production,
+          film_waste: record.film_waste,
+          organic_waste: record.organic_waste,
+          planned_time: record.planned_time,
+          downtime_minutes: record.downtime_minutes,
+          downtime_reason: record.downtime_reason,
+          material_code: record.material_code,
+          shift: record.shift,
+          operator_id: record.operator_id,
+          notes: record.notes,
+          batch_number: record.batch_number,
+          quality_check: record.quality_check,
+          temperature: record.temperature,
+          pressure: record.pressure,
+          speed: record.speed,
+          oee_calculated: record.oee_calculated,
+          availability_calculated: record.availability_calculated,
+          performance_calculated: record.performance_calculated,
+          quality_calculated: record.quality_calculated,
+          created_at: record.created_at,
+          updated_at: record.updated_at
+        }));
+      } else {
+        console.log('ℹ️ Usando productionService para buscar registros de produção');
+        result = await productionService.getProductionRecords(filters);
+      }
+      
       setRecords(result);
       return result;
     } catch (err) {

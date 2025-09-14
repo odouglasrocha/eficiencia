@@ -144,6 +144,148 @@ machineSchema.pre('save', function(next) {
 
 const Machine = mongoose.model('Machine', machineSchema);
 
+// Schema do registro de produção
+const productionRecordSchema = new mongoose.Schema({
+  machine_id: {
+    type: String,
+    required: true,
+    index: true
+  },
+  start_time: {
+    type: Date,
+    required: true,
+    index: true
+  },
+  end_time: {
+    type: Date
+  },
+  good_production: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  film_waste: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  organic_waste: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  planned_time: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  downtime_minutes: {
+    type: Number,
+    required: true,
+    min: 0
+  },
+  downtime_reason: {
+    type: String
+  },
+  material_code: {
+    type: String,
+    index: true
+  },
+  shift: {
+    type: String,
+    enum: ['A', 'B', 'C', 'Manhã', 'Tarde', 'Noite'],
+    index: true
+  },
+  operator_id: {
+    type: String,
+    index: true
+  },
+  notes: {
+    type: String
+  },
+  batch_number: {
+    type: String,
+    index: true
+  },
+  quality_check: {
+    type: Boolean,
+    default: true
+  },
+  temperature: {
+    type: Number
+  },
+  pressure: {
+    type: Number
+  },
+  speed: {
+    type: Number
+  },
+  oee_calculated: {
+    type: Number,
+    min: 0,
+    max: 100
+  },
+  availability_calculated: {
+    type: Number,
+    min: 0,
+    max: 100
+  },
+  performance_calculated: {
+    type: Number,
+    min: 0,
+    max: 100
+  },
+  quality_calculated: {
+    type: Number,
+    min: 0,
+    max: 100
+  },
+  created_at: {
+    type: Date,
+    default: Date.now,
+    index: true
+  },
+  updated_at: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Índices compostos para otimização
+productionRecordSchema.index({ machine_id: 1, start_time: -1 });
+productionRecordSchema.index({ shift: 1, start_time: -1 });
+productionRecordSchema.index({ operator_id: 1, start_time: -1 });
+productionRecordSchema.index({ material_code: 1, start_time: -1 });
+productionRecordSchema.index({ batch_number: 1 });
+
+// Middleware para calcular métricas OEE
+productionRecordSchema.pre('save', function(next) {
+  this.updated_at = new Date();
+  
+  // Calcular métricas OEE se não foram fornecidas
+  if (this.planned_time > 0) {
+    // Disponibilidade = (Tempo Planejado - Tempo de Parada) / Tempo Planejado * 100
+    this.availability_calculated = ((this.planned_time - this.downtime_minutes) / this.planned_time) * 100;
+    
+    // Performance = Produção Real / Produção Planejada * 100 (assumindo produção planejada = planned_time)
+    const plannedProduction = this.planned_time; // Simplificado
+    this.performance_calculated = (this.good_production / plannedProduction) * 100;
+    
+    // Qualidade = Produção Boa / (Produção Boa + Refugo) * 100
+    const totalProduction = this.good_production + this.film_waste + this.organic_waste;
+    this.quality_calculated = totalProduction > 0 ? (this.good_production / totalProduction) * 100 : 100;
+    
+    // OEE = Disponibilidade * Performance * Qualidade / 10000
+    this.oee_calculated = (this.availability_calculated * this.performance_calculated * this.quality_calculated) / 10000;
+  }
+  
+  next();
+});
+
+const ProductionRecord = mongoose.model('ProductionRecord', productionRecordSchema);
+
 // Conectar ao MongoDB
 mongoose.connect(MONGODB_URI)
   .then(() => {
@@ -469,6 +611,459 @@ app.delete('/api/machines/:id', async (req, res) => {
   }
 });
 
+// ===== ROTAS DE REGISTROS DE PRODUÇÃO =====
+
+// Listar registros de produção
+app.get('/api/production-records', async (req, res) => {
+  try {
+    const { 
+      machine_id, 
+      start_date, 
+      end_date, 
+      shift, 
+      operator_id, 
+      material_code,
+      batch_number,
+      limit = 50, 
+      offset = 0 
+    } = req.query;
+    
+    let query = {};
+    
+    // Filtros
+    if (machine_id) query.machine_id = machine_id;
+    if (shift) query.shift = shift;
+    if (operator_id) query.operator_id = operator_id;
+    if (material_code) query.material_code = material_code;
+    if (batch_number) query.batch_number = batch_number;
+    
+    // Filtro por data
+    if (start_date || end_date) {
+      query.start_time = {};
+      if (start_date) query.start_time.$gte = new Date(start_date);
+      if (end_date) query.start_time.$lte = new Date(end_date);
+    }
+    
+    const records = await ProductionRecord.find(query)
+      .limit(parseInt(limit))
+      .skip(parseInt(offset))
+      .sort({ start_time: -1 });
+    
+    const total = await ProductionRecord.countDocuments(query);
+    
+    res.json({
+      records,
+      total,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro ao buscar registros de produção:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Buscar registro de produção por ID
+app.get('/api/production-records/:id', async (req, res) => {
+  try {
+    const record = await ProductionRecord.findById(req.params.id);
+    
+    if (!record) {
+      return res.status(404).json({ message: 'Registro de produção não encontrado' });
+    }
+    
+    res.json(record);
+    
+  } catch (error) {
+    console.error('❌ Erro ao buscar registro de produção:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Criar novo registro de produção
+app.post('/api/production-records', async (req, res) => {
+  try {
+    console.log('🔍 Dados recebidos para criar registro de produção:', JSON.stringify(req.body, null, 2));
+    
+    const {
+      machine_id,
+      start_time,
+      end_time,
+      good_production,
+      film_waste,
+      organic_waste,
+      planned_time,
+      downtime_minutes,
+      downtime_reason,
+      material_code,
+      shift,
+      operator_id,
+      notes,
+      batch_number,
+      quality_check,
+      temperature,
+      pressure,
+      speed
+    } = req.body;
+    
+    console.log('🔍 machine_id recebido:', machine_id, 'tipo:', typeof machine_id);
+    
+    // Validações obrigatórias
+    if (!machine_id || !start_time || good_production === undefined || 
+        film_waste === undefined || organic_waste === undefined || 
+        planned_time === undefined || downtime_minutes === undefined) {
+      console.log('❌ Validação falhou - campos obrigatórios ausentes');
+      return res.status(400).json({ 
+        message: 'Campos obrigatórios: machine_id, start_time, good_production, film_waste, organic_waste, planned_time, downtime_minutes' 
+      });
+    }
+    
+    // Validar se o machine_id é um ObjectId válido
+    console.log('🔍 Validando machine_id:', machine_id, 'tipo:', typeof machine_id);
+    if (!machine_id || typeof machine_id !== 'string' || !mongoose.Types.ObjectId.isValid(machine_id)) {
+      console.log('❌ machine_id não é um ObjectId válido:', machine_id);
+      return res.status(400).json({ message: 'ID da máquina inválido' });
+    }
+    
+    // Verificar se a máquina existe
+    console.log('🔍 Buscando máquina com ID:', machine_id);
+    const machine = await Machine.findById(machine_id);
+    if (!machine) {
+      console.log('❌ Máquina não encontrada com ID:', machine_id);
+      return res.status(404).json({ message: 'Máquina não encontrada' });
+    }
+    console.log('✅ Máquina encontrada:', machine.name);
+    
+    // Criar registro de produção
+    const newRecord = new ProductionRecord({
+      machine_id,
+      start_time: new Date(start_time),
+      end_time: end_time ? new Date(end_time) : undefined,
+      good_production: Number(good_production),
+      film_waste: Number(film_waste),
+      organic_waste: Number(organic_waste),
+      planned_time: Number(planned_time),
+      downtime_minutes: Number(downtime_minutes),
+      downtime_reason,
+      material_code,
+      shift,
+      operator_id,
+      notes,
+      batch_number,
+      quality_check: quality_check !== undefined ? Boolean(quality_check) : true,
+      temperature: temperature ? Number(temperature) : undefined,
+      pressure: pressure ? Number(pressure) : undefined,
+      speed: speed ? Number(speed) : undefined
+    });
+    
+    await newRecord.save();
+    
+    console.log(`✅ Novo registro de produção criado para máquina ${machine.name}`);
+    
+    res.status(201).json(newRecord);
+    
+  } catch (error) {
+    console.error('❌ Erro ao criar registro de produção:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Atualizar registro de produção
+app.put('/api/production-records/:id', async (req, res) => {
+  try {
+    const record = await ProductionRecord.findById(req.params.id);
+    if (!record) {
+      return res.status(404).json({ message: 'Registro de produção não encontrado' });
+    }
+    
+    // Atualizar campos permitidos
+    const allowedUpdates = [
+      'end_time', 'good_production', 'film_waste', 'organic_waste', 
+      'planned_time', 'downtime_minutes', 'downtime_reason', 
+      'material_code', 'shift', 'operator_id', 'notes', 'batch_number',
+      'quality_check', 'temperature', 'pressure', 'speed'
+    ];
+    
+    const updates = {};
+    allowedUpdates.forEach(field => {
+      if (req.body[field] !== undefined) {
+        if (field === 'end_time') {
+          updates[field] = new Date(req.body[field]);
+        } else if (['good_production', 'film_waste', 'organic_waste', 'planned_time', 'downtime_minutes', 'temperature', 'pressure', 'speed'].includes(field)) {
+          updates[field] = Number(req.body[field]);
+        } else if (field === 'quality_check') {
+          updates[field] = Boolean(req.body[field]);
+        } else {
+          updates[field] = req.body[field];
+        }
+      }
+    });
+    
+    const updatedRecord = await ProductionRecord.findByIdAndUpdate(
+      req.params.id,
+      updates,
+      { new: true, runValidators: true }
+    );
+    
+    console.log(`✅ Registro de produção atualizado: ${updatedRecord._id}`);
+    
+    res.json(updatedRecord);
+    
+  } catch (error) {
+    console.error('❌ Erro ao atualizar registro de produção:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Deletar registro de produção
+app.delete('/api/production-records/:id', async (req, res) => {
+  try {
+    const record = await ProductionRecord.findById(req.params.id);
+    
+    if (!record) {
+      return res.status(404).json({ message: 'Registro de produção não encontrado' });
+    }
+    
+    await ProductionRecord.findByIdAndDelete(req.params.id);
+    
+    console.log(`✅ Registro de produção deletado: ${record._id}`);
+    
+    res.json({ message: 'Registro de produção deletado com sucesso' });
+    
+  } catch (error) {
+    console.error('❌ Erro ao deletar registro de produção:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Estatísticas de produção
+app.get('/api/production-statistics', async (req, res) => {
+  try {
+    const { machine_id, start_date, end_date, shift } = req.query;
+    
+    let matchQuery = {};
+    if (machine_id) matchQuery.machine_id = machine_id;
+    if (shift) matchQuery.shift = shift;
+    if (start_date || end_date) {
+      matchQuery.start_time = {};
+      if (start_date) matchQuery.start_time.$gte = new Date(start_date);
+      if (end_date) matchQuery.start_time.$lte = new Date(end_date);
+    }
+    
+    const stats = await ProductionRecord.aggregate([
+      { $match: matchQuery },
+      {
+        $group: {
+          _id: null,
+          totalRecords: { $sum: 1 },
+          totalProduction: { $sum: '$good_production' },
+          totalWaste: { $sum: { $add: ['$film_waste', '$organic_waste'] } },
+          totalDowntime: { $sum: '$downtime_minutes' },
+          totalPlannedTime: { $sum: '$planned_time' },
+          averageOEE: { $avg: '$oee_calculated' },
+          averageAvailability: { $avg: '$availability_calculated' },
+          averagePerformance: { $avg: '$performance_calculated' },
+          averageQuality: { $avg: '$quality_calculated' }
+        }
+      }
+    ]);
+    
+    const result = stats[0] || {
+      totalRecords: 0,
+      totalProduction: 0,
+      totalWaste: 0,
+      totalDowntime: 0,
+      totalPlannedTime: 0,
+      averageOEE: 0,
+      averageAvailability: 0,
+      averagePerformance: 0,
+      averageQuality: 0
+    };
+    
+    res.json(result);
+    
+  } catch (error) {
+    console.error('❌ Erro ao calcular estatísticas:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Inicializar registros de produção padrão
+app.post('/api/init/production-records', async (req, res) => {
+  try {
+    // Buscar máquinas disponíveis
+    const machines = await Machine.find({ status: { $in: ['ativa', 'manutencao'] } }).limit(5);
+    
+    if (machines.length === 0) {
+      return res.status(400).json({ 
+        message: 'Nenhuma máquina disponível. Inicialize as máquinas primeiro.' 
+      });
+    }
+    
+    const defaultRecords = [
+      {
+        machine_id: machines[0]._id,
+        start_time: new Date(Date.now() - 4 * 60 * 60 * 1000),
+        end_time: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        good_production: 950,
+        film_waste: 30,
+        organic_waste: 20,
+        planned_time: 120,
+        downtime_minutes: 25,
+        downtime_reason: 'Manutenção preventiva; Ajuste de parâmetros',
+        material_code: 'MAT001',
+        shift: 'A',
+        operator_id: 'OP001',
+        notes: 'Produção normal, sem intercorrências',
+        batch_number: 'LOTE2025001',
+        quality_check: true,
+        temperature: 185.5,
+        pressure: 12.3,
+        speed: 85.2
+      },
+      {
+        machine_id: machines[Math.min(1, machines.length - 1)]._id,
+        start_time: new Date(Date.now() - 8 * 60 * 60 * 1000),
+        end_time: new Date(Date.now() - 6 * 60 * 60 * 1000),
+        good_production: 1150,
+        film_waste: 45,
+        organic_waste: 25,
+        planned_time: 120,
+        downtime_minutes: 20,
+        downtime_reason: 'Troca de material',
+        material_code: 'MAT002',
+        shift: 'B',
+        operator_id: 'OP002',
+        notes: 'Boa produtividade no turno B',
+        batch_number: 'LOTE2025002',
+        quality_check: true,
+        temperature: 190.0,
+        pressure: 11.8,
+        speed: 92.1
+      },
+      {
+        machine_id: machines[Math.min(2, machines.length - 1)]._id,
+        start_time: new Date(Date.now() - 12 * 60 * 60 * 1000),
+        end_time: new Date(Date.now() - 10 * 60 * 60 * 1000),
+        good_production: 800,
+        film_waste: 60,
+        organic_waste: 40,
+        planned_time: 120,
+        downtime_minutes: 50,
+        downtime_reason: 'Problema técnico; Limpeza',
+        material_code: 'MAT003',
+        shift: 'C',
+        operator_id: 'OP003',
+        notes: 'Problemas técnicos resolvidos',
+        batch_number: 'LOTE2025003',
+        quality_check: false,
+        temperature: 175.2,
+        pressure: 13.1,
+        speed: 78.5
+      },
+      {
+        machine_id: machines[0]._id,
+        start_time: new Date(Date.now() - 24 * 60 * 60 * 1000),
+        end_time: new Date(Date.now() - 22 * 60 * 60 * 1000),
+        good_production: 1050,
+        film_waste: 25,
+        organic_waste: 15,
+        planned_time: 120,
+        downtime_minutes: 10,
+        downtime_reason: 'Pausa programada',
+        material_code: 'MAT001',
+        shift: 'A',
+        operator_id: 'OP001',
+        notes: 'Excelente performance',
+        batch_number: 'LOTE2025004',
+        quality_check: true,
+        temperature: 188.7,
+        pressure: 12.0,
+        speed: 89.3
+      },
+      {
+        machine_id: machines[Math.min(1, machines.length - 1)]._id,
+        start_time: new Date(Date.now() - 6 * 60 * 60 * 1000),
+        end_time: new Date(Date.now() - 4 * 60 * 60 * 1000),
+        good_production: 920,
+        film_waste: 35,
+        organic_waste: 30,
+        planned_time: 120,
+        downtime_minutes: 25,
+        downtime_reason: 'Ajuste de qualidade',
+        material_code: 'MAT002',
+        shift: 'B',
+        operator_id: 'OP002',
+        notes: 'Ajustes realizados com sucesso',
+        batch_number: 'LOTE2025005',
+        quality_check: true,
+        temperature: 192.1,
+        pressure: 11.5,
+        speed: 87.8
+      }
+    ];
+    
+    const results = [];
+    
+    for (const recordData of defaultRecords) {
+      try {
+        // Verificar se já existe registro com o mesmo lote
+        const existingRecord = await ProductionRecord.findOne({ batch_number: recordData.batch_number });
+        if (existingRecord) {
+          const machine = machines.find(m => m._id.toString() === recordData.machine_id.toString());
+          results.push({ 
+            batch_number: recordData.batch_number,
+            machine: machine?.name || 'Desconhecida',
+            status: 'já existe' 
+          });
+          continue;
+        }
+        
+        // Criar registro de produção
+        const newRecord = new ProductionRecord(recordData);
+        await newRecord.save();
+        
+        const machine = machines.find(m => m._id.toString() === recordData.machine_id.toString());
+        results.push({ 
+          batch_number: recordData.batch_number,
+          machine: machine?.name || 'Desconhecida',
+          status: 'criado',
+          id: newRecord._id,
+          oee: newRecord.oee_calculated?.toFixed(1) + '%'
+        });
+        
+        console.log(`✅ Registro de produção criado: ${recordData.batch_number} - ${machine?.name}`);
+        
+      } catch (error) {
+        console.error(`❌ Erro ao criar registro ${recordData.batch_number}:`, error);
+        results.push({ 
+          batch_number: recordData.batch_number,
+          status: 'erro', 
+          error: error.message
+        });
+      }
+    }
+    
+    const summary = {
+      total: defaultRecords.length,
+      created: results.filter(r => r.status === 'criado').length,
+      existing: results.filter(r => r.status === 'já existe').length,
+      errors: results.filter(r => r.status === 'erro').length
+    };
+    
+    res.json({ 
+      message: 'Inicialização de registros de produção concluída', 
+      results,
+      summary
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro na inicialização de registros de produção:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 // Inicializar máquinas padrão
 app.post('/api/init/machines', async (req, res) => {
   try {
@@ -662,4 +1257,11 @@ app.listen(PORT, () => {
   console.log(`   PUT  /api/machines/:id - Atualizar máquina`);
   console.log(`   DELETE /api/machines/:id - Deletar máquina`);
   console.log(`   POST /api/init/machines - Inicializar máquinas padrão`);
+  console.log(`   GET  /api/production-records - Listar registros de produção`);
+  console.log(`   GET  /api/production-records/:id - Buscar registro por ID`);
+  console.log(`   POST /api/production-records - Criar registro de produção`);
+  console.log(`   PUT  /api/production-records/:id - Atualizar registro`);
+  console.log(`   DELETE /api/production-records/:id - Deletar registro`);
+  console.log(`   GET  /api/production-statistics - Estatísticas de produção`);
+  console.log(`   POST /api/init/production-records - Inicializar registros padrão`);
 });

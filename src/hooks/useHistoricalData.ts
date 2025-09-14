@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import mockMongoService from '@/services/mockMongoService';
+import productionRecordService from '@/services/productionRecordService';
 import { startOfMonth, endOfMonth, format, eachDayOfInterval } from 'date-fns';
 
 interface HistoricalAnalytics {
@@ -86,9 +87,29 @@ export function useHistoricalData(machineId?: string) {
         });
 
         // Fetch production records from current month
-        const allProductionData = await mockMongoService.getProductionRecords(machineId);
+        let allProductionData;
+        const isApiAvailable = await productionRecordService.isApiAvailable();
         
-        // Filtrar por data no frontend
+        if (isApiAvailable) {
+          console.log('✅ Usando API MongoDB real para dados históricos');
+          const response = await productionRecordService.getProductionRecords({
+            machine_id: machineId,
+            start_date: startOfCurrentMonth.toISOString(),
+            end_date: endOfCurrentMonth.toISOString(),
+            limit: 1000
+          });
+          allProductionData = response.records;
+        } else {
+          console.log('ℹ️ Usando mockMongoService para dados históricos');
+          allProductionData = await mockMongoService.getProductionRecords({
+            machineId: machineId,
+            startDate: startOfCurrentMonth.toISOString(),
+            endDate: endOfCurrentMonth.toISOString(),
+            limit: 1000
+          });
+        }
+        
+        // Filtrar por data no frontend (se necessário)
         const productionData = allProductionData.filter((record: any) => {
           const recordDate = new Date(record.start_time);
           return recordDate >= startOfCurrentMonth && recordDate <= endOfCurrentMonth;
@@ -104,10 +125,21 @@ export function useHistoricalData(machineId?: string) {
         });
 
         // Fetch previous month production for comparison
-        const previousMonthData = allProductionData.filter((record: any) => {
-          const recordDate = new Date(record.start_time);
-          return recordDate >= startOfPreviousMonth && recordDate <= endOfPreviousMonth;
-        });
+        let previousMonthData;
+        if (isApiAvailable) {
+          const previousResponse = await productionRecordService.getProductionRecords({
+            machine_id: machineId,
+            start_date: startOfPreviousMonth.toISOString(),
+            end_date: endOfPreviousMonth.toISOString(),
+            limit: 1000
+          });
+          previousMonthData = previousResponse.records;
+        } else {
+          previousMonthData = allProductionData.filter((record: any) => {
+            const recordDate = new Date(record.start_time);
+            return recordDate >= startOfPreviousMonth && recordDate <= endOfPreviousMonth;
+          });
+        }
 
         // Calculate analytics
         const avgOee = oeeData?.reduce((sum, record) => sum + record.oee, 0) / (oeeData?.length || 1) || 0;

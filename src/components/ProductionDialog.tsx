@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -247,6 +248,9 @@ export function ProductionDialog({ machineId, onAdd, open, onOpenChange }: Produ
             <Package className="h-5 w-5" />
             Registro de Produção
           </DialogTitle>
+          <DialogDescription>
+            Registre os dados de produção da máquina selecionada.
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-8">
           {/* Seleção do Código/Material */}

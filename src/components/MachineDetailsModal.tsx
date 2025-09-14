@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -349,6 +350,9 @@ export function MachineDetailsModal({ machine, isOpen, onClose }: MachineDetails
                 </div>
               </div>
             </DialogTitle>
+            <DialogDescription className="text-muted-foreground mt-2">
+              Análise detalhada de performance, métricas OEE e recomendações para otimização da máquina.
+            </DialogDescription>
             
             <div className="flex flex-wrap items-center gap-4">
               <Badge variant="outline" className="text-sm font-medium px-3 py-1 hover-lift">

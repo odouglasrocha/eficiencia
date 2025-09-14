@@ -57,8 +57,32 @@ export function useMachines() {
       const machinesWithCalculatedValues = await Promise.all(
         machinesData.map(async (machine: any) => {
           try {
+            // Validar se a máquina tem ID válido
+            const machineId = machine.id || machine._id;
+            if (!machineId) {
+              console.warn('⚠️ Máquina sem ID válido:', machine);
+              return {
+                id: 'unknown',
+                name: machine.name || 'Máquina sem nome',
+                code: machine.code || 'UNKNOWN',
+                status: machine.status || 'inativa',
+                oee: 0,
+                availability: 0,
+                performance: 0,
+                quality: 100,
+                current_production: 0,
+                target_production: 0,
+                capacity: machine.capacity || 1000,
+                permissions: machine.permissions || [],
+                access_level: machine.access_level || 'operador',
+                created_at: machine.created_at,
+                updated_at: machine.updated_at
+              };
+            }
+            
             // Buscar o último registro de produção da máquina
-            const productionRecords = await mockMongoService.getProductionRecords(machine._id.toString());
+            const machineIdString = typeof machineId === 'string' ? machineId : machineId.toString();
+            const productionRecords = await mockMongoService.getProductionRecords(machineIdString);
             const lastRecord = productionRecords[0]; // Já vem ordenado por created_at desc
 
             // Usar valores do último registro de produção
@@ -117,7 +141,7 @@ export function useMachines() {
             }
 
             return {
-              id: machine._id.toString(),
+              id: machineIdString,
               name: machine.name,
               code: machine.code,
               status: machine.status,
@@ -134,13 +158,16 @@ export function useMachines() {
               updated_at: machine.updated_at
             } as Machine;
           } catch (err) {
-            console.error(`Erro ao processar máquina ${machine.name}:`, err);
+            console.error(`Erro ao processar máquina ${machine.name || machine.code || 'desconhecida'}:`, err);
             // Retornar máquina com valores padrão em caso de erro
+            const fallbackId = machine.id || machine._id || `fallback-${Date.now()}`;
+            const fallbackIdString = typeof fallbackId === 'string' ? fallbackId : fallbackId.toString();
+            
             return {
-              id: machine._id.toString(),
-              name: machine.name,
-              code: machine.code,
-              status: machine.status,
+              id: fallbackIdString,
+              name: machine.name || 'Máquina com erro',
+              code: machine.code || 'ERROR',
+              status: machine.status || 'inativa',
               current_production: 0,
               target_production: 0,
               oee: 0,
