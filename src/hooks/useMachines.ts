@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { materialsData } from '@/data/materialsData';
 import mockMongoService from '@/services/mockMongoService';
+import machineService from '@/services/machineService';
 
 export interface Machine {
   id: string;
@@ -38,7 +39,19 @@ export function useMachines() {
   const fetchMachines = async () => {
     try {
       setLoading(true);
-      const machinesData = await mockMongoService.getMachines();
+      
+      // Tentar usar API real primeiro
+      const isApiAvailable = await machineService.isApiAvailable();
+      
+      let machinesData;
+      if (isApiAvailable) {
+        console.log('✅ Usando API MongoDB real para buscar máquinas');
+        const response = await machineService.getMachines();
+        machinesData = response.machines;
+      } else {
+        console.log('ℹ️ Usando mockMongoService para buscar máquinas');
+        machinesData = await mockMongoService.getMachines();
+      }
 
       // Para cada máquina, buscar valores da production_records e calcular métricas
       const machinesWithCalculatedValues = await Promise.all(
@@ -160,29 +173,39 @@ export function useMachines() {
 
   const createMachine = async (machineData: CreateMachineData) => {
     try {
-      const newMachine = await mockMongoService.createMachine({
-        ...machineData,
-        oee: 0,
-        availability: 0,
-        performance: 0,
-        quality: 0,
-        current_production: 0,
-        target_production: 0,
-        capacity: 0,
-      });
+      // Tentar usar API real primeiro
+      const isApiAvailable = await machineService.isApiAvailable();
+      
+      let newMachine;
+      if (isApiAvailable) {
+        console.log('✅ Usando API MongoDB real para criar máquina');
+        newMachine = await machineService.createMachine(machineData);
+      } else {
+        console.log('ℹ️ Usando mockMongoService para criar máquina');
+        newMachine = await mockMongoService.createMachine({
+          ...machineData,
+          oee: 0,
+          availability: 0,
+          performance: 0,
+          quality: 0,
+          current_production: 0,
+          target_production: 0,
+          capacity: 0,
+        });
+      }
 
       const machineForState: Machine = {
-        id: newMachine._id.toString(),
+        id: newMachine.id || newMachine._id?.toString() || newMachine._id,
         name: newMachine.name,
         code: newMachine.code,
         status: newMachine.status,
-        oee: 0,
-        availability: 0,
-        performance: 0,
-        quality: 0,
-        current_production: 0,
-        target_production: 0,
-        capacity: 0,
+        oee: newMachine.oee || 0,
+        availability: newMachine.availability || 0,
+        performance: newMachine.performance || 0,
+        quality: newMachine.quality || 100,
+        current_production: newMachine.current_production || 0,
+        target_production: newMachine.target_production || 1,
+        capacity: newMachine.capacity || 1000,
         permissions: newMachine.permissions || [],
         access_level: newMachine.access_level || 'operador',
         created_at: newMachine.created_at,
@@ -208,13 +231,23 @@ export function useMachines() {
 
   const updateMachine = async (id: string, updates: Partial<Machine>) => {
     try {
-      const updatedMachine = await mockMongoService.updateMachine(id, updates);
+      // Tentar usar API real primeiro
+      const isApiAvailable = await machineService.isApiAvailable();
+      
+      let updatedMachine;
+      if (isApiAvailable) {
+        console.log('✅ Usando API MongoDB real para atualizar máquina');
+        updatedMachine = await machineService.updateMachine(id, updates);
+      } else {
+        console.log('ℹ️ Usando mockMongoService para atualizar máquina');
+        updatedMachine = await mockMongoService.updateMachine(id, updates);
+      }
 
       setMachines(prev => prev.map(machine => 
         machine.id === id ? { 
           ...machine, 
           ...updates,
-          id: updatedMachine._id.toString(),
+          id: updatedMachine.id || updatedMachine._id?.toString() || updatedMachine._id,
           updated_at: updatedMachine.updated_at
         } as Machine : machine
       ));
@@ -237,7 +270,16 @@ export function useMachines() {
 
   const deleteMachine = async (id: string) => {
     try {
-      await mockMongoService.deleteMachine(id);
+      // Tentar usar API real primeiro
+      const isApiAvailable = await machineService.isApiAvailable();
+      
+      if (isApiAvailable) {
+        console.log('✅ Usando API MongoDB real para deletar máquina');
+        await machineService.deleteMachine(id);
+      } else {
+        console.log('ℹ️ Usando mockMongoService para deletar máquina');
+        await mockMongoService.deleteMachine(id);
+      }
 
       setMachines(prev => prev.filter(machine => machine.id !== id));
       toast({

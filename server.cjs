@@ -48,6 +48,102 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
+// Schema da máquina
+const machineSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  code: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    uppercase: true
+  },
+  status: {
+    type: String,
+    enum: ['ativa', 'manutencao', 'parada', 'inativa'],
+    default: 'ativa',
+    index: true
+  },
+  oee: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  availability: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  performance: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  quality: {
+    type: Number,
+    default: 100,
+    min: 0,
+    max: 100
+  },
+  current_production: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  target_production: {
+    type: Number,
+    default: 1,
+    min: 1
+  },
+  capacity: {
+    type: Number,
+    default: 1000,
+    min: 1
+  },
+  permissions: {
+    type: [String],
+    default: []
+  },
+  access_level: {
+    type: String,
+    enum: ['administrador', 'supervisor', 'operador'],
+    default: 'operador'
+  },
+  last_production_update: {
+    type: Date
+  },
+  created_at: {
+    type: Date,
+    default: Date.now
+  },
+  updated_at: {
+    type: Date,
+    default: Date.now
+  }
+}, {
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
+});
+
+// Índices para otimização
+machineSchema.index({ code: 1 }, { unique: true });
+machineSchema.index({ status: 1 });
+machineSchema.index({ name: 'text', code: 'text' });
+
+// Middleware para atualizar updated_at
+machineSchema.pre('save', function(next) {
+  this.updated_at = new Date();
+  next();
+});
+
+const Machine = mongoose.model('Machine', machineSchema);
+
 // Conectar ao MongoDB
 mongoose.connect(MONGODB_URI)
   .then(() => {
@@ -61,7 +157,12 @@ mongoose.connect(MONGODB_URI)
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'API MongoDB funcionando' });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    version: '1.0.0'
+  });
 });
 
 // Criar usuário
@@ -168,6 +269,315 @@ app.post('/api/auth/verify', async (req, res) => {
   }
 });
 
+// ===== ROTAS DE MÁQUINAS =====
+
+// Listar todas as máquinas
+app.get('/api/machines', async (req, res) => {
+  try {
+    const { status, search, limit = 50, offset = 0 } = req.query;
+    
+    let query = {};
+    
+    // Filtro por status
+    if (status) {
+      query.status = status;
+    }
+    
+    // Busca por texto (nome ou código)
+    if (search) {
+      query.$text = { $search: search };
+    }
+    
+    const machines = await Machine.find(query)
+      .limit(parseInt(limit))
+      .skip(parseInt(offset))
+      .sort({ created_at: -1 });
+    
+    const total = await Machine.countDocuments(query);
+    
+    res.json({
+      machines,
+      total,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro ao buscar máquinas:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Buscar máquina por ID
+app.get('/api/machines/:id', async (req, res) => {
+  try {
+    const machine = await Machine.findById(req.params.id);
+    
+    if (!machine) {
+      return res.status(404).json({ message: 'Máquina não encontrada' });
+    }
+    
+    res.json(machine);
+    
+  } catch (error) {
+    console.error('❌ Erro ao buscar máquina:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Criar nova máquina
+app.post('/api/machines', async (req, res) => {
+  try {
+    const { name, code, status, permissions, access_level, capacity, target_production } = req.body;
+    
+    // Validações obrigatórias
+    if (!name || !code) {
+      return res.status(400).json({ message: 'Nome e código são obrigatórios' });
+    }
+    
+    // Verificar se já existe máquina com o mesmo código
+    const existingMachine = await Machine.findOne({ code: code.toUpperCase() });
+    if (existingMachine) {
+      return res.status(409).json({ message: `Já existe uma máquina com o código '${code.toUpperCase()}'` });
+    }
+    
+    // Verificar se já existe máquina com o mesmo nome
+    const existingMachineByName = await Machine.findOne({ name: { $regex: new RegExp(`^${name}$`, 'i') } });
+    if (existingMachineByName) {
+      return res.status(409).json({ message: `Já existe uma máquina com o nome '${name}'` });
+    }
+    
+    // Criar nova máquina
+    const newMachine = new Machine({
+      name: name.trim(),
+      code: code.toUpperCase().trim(),
+      status: status || 'inativa',
+      permissions: permissions || [],
+      access_level: access_level || 'operador',
+      capacity: capacity || 1000,
+      target_production: target_production || 1
+    });
+    
+    await newMachine.save();
+    
+    console.log(`✅ Nova máquina criada: ${newMachine.name} (${newMachine.code})`);
+    
+    res.status(201).json(newMachine);
+    
+  } catch (error) {
+    console.error('❌ Erro ao criar máquina:', error);
+    
+    // Tratar erro de duplicata (caso o índice único falhe)
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      const value = error.keyValue[field];
+      return res.status(409).json({ 
+        message: `Já existe uma máquina com ${field === 'code' ? 'código' : 'nome'} '${value}'` 
+      });
+    }
+    
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Atualizar máquina
+app.put('/api/machines/:id', async (req, res) => {
+  try {
+    const { name, code, status, permissions, access_level, capacity, target_production } = req.body;
+    
+    // Verificar se a máquina existe
+    const machine = await Machine.findById(req.params.id);
+    if (!machine) {
+      return res.status(404).json({ message: 'Máquina não encontrada' });
+    }
+    
+    // Se o código está sendo alterado, verificar duplicata
+    if (code && code.toUpperCase() !== machine.code) {
+      const existingMachine = await Machine.findOne({ 
+        code: code.toUpperCase(),
+        _id: { $ne: req.params.id }
+      });
+      if (existingMachine) {
+        return res.status(409).json({ message: `Já existe uma máquina com o código '${code.toUpperCase()}'` });
+      }
+    }
+    
+    // Se o nome está sendo alterado, verificar duplicata
+    if (name && name.toLowerCase() !== machine.name.toLowerCase()) {
+      const existingMachineByName = await Machine.findOne({ 
+        name: { $regex: new RegExp(`^${name}$`, 'i') },
+        _id: { $ne: req.params.id }
+      });
+      if (existingMachineByName) {
+        return res.status(409).json({ message: `Já existe uma máquina com o nome '${name}'` });
+      }
+    }
+    
+    // Atualizar campos
+    const updates = {};
+    if (name) updates.name = name.trim();
+    if (code) updates.code = code.toUpperCase().trim();
+    if (status) updates.status = status;
+    if (permissions !== undefined) updates.permissions = permissions;
+    if (access_level) updates.access_level = access_level;
+    if (capacity !== undefined) updates.capacity = capacity;
+    if (target_production !== undefined) updates.target_production = target_production;
+    
+    const updatedMachine = await Machine.findByIdAndUpdate(
+      req.params.id,
+      updates,
+      { new: true, runValidators: true }
+    );
+    
+    console.log(`✅ Máquina atualizada: ${updatedMachine.name} (${updatedMachine.code})`);
+    
+    res.json(updatedMachine);
+    
+  } catch (error) {
+    console.error('❌ Erro ao atualizar máquina:', error);
+    
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      const value = error.keyValue[field];
+      return res.status(409).json({ 
+        message: `Já existe uma máquina com ${field === 'code' ? 'código' : 'nome'} '${value}'` 
+      });
+    }
+    
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Deletar máquina
+app.delete('/api/machines/:id', async (req, res) => {
+  try {
+    const machine = await Machine.findById(req.params.id);
+    
+    if (!machine) {
+      return res.status(404).json({ message: 'Máquina não encontrada' });
+    }
+    
+    await Machine.findByIdAndDelete(req.params.id);
+    
+    console.log(`✅ Máquina deletada: ${machine.name} (${machine.code})`);
+    
+    res.json({ message: 'Máquina deletada com sucesso' });
+    
+  } catch (error) {
+    console.error('❌ Erro ao deletar máquina:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
+// Inicializar máquinas padrão
+app.post('/api/init/machines', async (req, res) => {
+  try {
+    const defaultMachines = [
+      {
+        name: 'Extrusora Principal',
+        code: 'EXT-001',
+        status: 'ativa',
+        permissions: ['visualizar_oee', 'editar_producao', 'visualizar_alertas'],
+        access_level: 'operador',
+        capacity: 1500,
+        target_production: 1200
+      },
+      {
+        name: 'Injetora Automática',
+        code: 'INJ-002',
+        status: 'ativa',
+        permissions: ['visualizar_oee', 'editar_producao'],
+        access_level: 'operador',
+        capacity: 800,
+        target_production: 600
+      },
+      {
+        name: 'Linha de Montagem A',
+        code: 'LMA-003',
+        status: 'manutencao',
+        permissions: ['visualizar_oee', 'editar_producao', 'visualizar_alertas', 'gerenciar_manutencao'],
+        access_level: 'supervisor',
+        capacity: 2000,
+        target_production: 1800
+      },
+      {
+        name: 'Prensa Hidráulica',
+        code: 'PRH-004',
+        status: 'ativa',
+        permissions: ['visualizar_oee', 'editar_producao'],
+        access_level: 'operador',
+        capacity: 500,
+        target_production: 400
+      },
+      {
+        name: 'Centro de Usinagem CNC',
+        code: 'CNC-005',
+        status: 'parada',
+        permissions: ['visualizar_oee', 'editar_producao', 'visualizar_alertas', 'configurar_parametros'],
+        access_level: 'supervisor',
+        capacity: 300,
+        target_production: 250
+      }
+    ];
+    
+    const results = [];
+    
+    for (const machineData of defaultMachines) {
+      try {
+        // Verificar se máquina já existe
+        const existingMachine = await Machine.findOne({ code: machineData.code });
+        if (existingMachine) {
+          results.push({ 
+            code: machineData.code, 
+            name: machineData.name,
+            status: 'já existe' 
+          });
+          continue;
+        }
+        
+        // Criar máquina
+        const newMachine = new Machine(machineData);
+        await newMachine.save();
+        
+        results.push({ 
+          code: newMachine.code, 
+          name: newMachine.name,
+          status: 'criada',
+          id: newMachine._id
+        });
+        
+        console.log(`✅ Máquina criada: ${newMachine.name} (${newMachine.code})`);
+        
+      } catch (error) {
+        console.error(`❌ Erro ao criar máquina ${machineData.name}:`, error);
+        results.push({ 
+          code: machineData.code, 
+          name: machineData.name,
+          status: 'erro', 
+          error: error.message
+        });
+      }
+    }
+    
+    const summary = {
+      total: defaultMachines.length,
+      created: results.filter(r => r.status === 'criada').length,
+      existing: results.filter(r => r.status === 'já existe').length,
+      errors: results.filter(r => r.status === 'erro').length
+    };
+    
+    res.json({ 
+      message: 'Inicialização de máquinas concluída', 
+      results,
+      summary
+    });
+    
+  } catch (error) {
+    console.error('❌ Erro na inicialização de máquinas:', error);
+    res.status(500).json({ message: 'Erro interno do servidor' });
+  }
+});
+
 // Inicializar usuários padrão
 app.post('/api/init/users', async (req, res) => {
   try {
@@ -246,4 +656,10 @@ app.listen(PORT, () => {
   console.log(`   POST /api/auth/login - Login`);
   console.log(`   POST /api/auth/verify - Verificar token`);
   console.log(`   POST /api/init/users - Inicializar usuários padrão`);
+  console.log(`   GET  /api/machines - Listar máquinas`);
+  console.log(`   GET  /api/machines/:id - Buscar máquina por ID`);
+  console.log(`   POST /api/machines - Criar nova máquina`);
+  console.log(`   PUT  /api/machines/:id - Atualizar máquina`);
+  console.log(`   DELETE /api/machines/:id - Deletar máquina`);
+  console.log(`   POST /api/init/machines - Inicializar máquinas padrão`);
 });
